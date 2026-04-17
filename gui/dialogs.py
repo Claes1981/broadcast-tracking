@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QMessageBox,
     QFileDialog,
+    QSpinBox,
 )
 from PyQt6.QtCore import Qt
 

@@ -28,6 +28,9 @@ class Tournament(Base):
     rounds = relationship(
         "Round", back_populates="tournament", cascade="all, delete-orphan"
     )
+    participants = relationship(
+        "Participant", back_populates="tournament", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<Tournament(id={self.id}, name='{self.name}')>"

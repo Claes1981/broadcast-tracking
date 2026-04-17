@@ -304,7 +304,7 @@ class MainWindow(QMainWindow):
             self._players_table.setItem(i, 2, QTableWidgetItem(str(digital_count)))
 
     def _on_round_changed(self, round_str: str):
-        if not round_str:
+        if not round_str or not self.session:
             return
 
         round_num = int(round_str.replace("Round ", ""))

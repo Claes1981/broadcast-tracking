@@ -47,7 +47,8 @@ def allocate_digital_boards(
     pairing_sums.sort(key=lambda x: x[1])
 
     if num_digital_boards >= len(pairing_sums):
-        for pairing, _ in pairing_sums:
+        result = []
+        for i, (pairing, _) in enumerate(pairing_sums):
             existing = (
                 session.query(DigitalAssignment)
                 .filter(DigitalAssignment.pairing_id == pairing.id)
@@ -57,15 +58,18 @@ def allocate_digital_boards(
                 continue
             if existing:
                 session.delete(existing)
+            label = digital_labels[i] if i < len(digital_labels) else None
             assignment = DigitalAssignment(
                 pairing_id=pairing.id,
-                digital_board_label=None,
+                digital_board_label=label,
                 is_manual=False,
                 is_excluded=False,
             )
             session.add(assignment)
+            if label:
+                result.append((pairing, label))
         session.commit()
-        return []
+        return result
 
     cutoff_index = num_digital_boards - 1
     cutoff_sum = pairing_sums[cutoff_index][1]

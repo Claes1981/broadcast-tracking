@@ -148,7 +148,7 @@ class SchackSeScraper(BaseScraper):
         self, result_text: str
     ) -> tuple[Optional[float], Optional[float]]:
         """Parse a result string like '3 - 1' or '3½ - ½' into scores."""
-        result_text = result_text.replace("½", "0.5").replace(" ", "")
+        result_text = result_text.replace(" ", "").replace("½", ".5")
 
         match = re.match(r"([\d.]+)\s*-\s*([\d.]+)", result_text)
         if match:
