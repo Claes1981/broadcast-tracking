@@ -57,6 +57,7 @@ from gui.dialogs import (
     FetchPairingsDialog,
     SettingsDialog,
     ExportDialog,
+    ManualRoundDialog,
 )
 from utils.export import export_to_csv, export_to_json
 
@@ -129,6 +130,10 @@ class MainWindow(QMainWindow):
         round_menu.addAction(next_action)
 
         round_menu.addSeparator()
+
+        manual_round_action = QAction("Add Round Manually...", self)
+        manual_round_action.triggered.connect(self._manual_add_round)
+        round_menu.addAction(manual_round_action)
 
         allocate_action = QAction("Allocate Digital Boards", self)
         allocate_action.triggered.connect(self._allocate_digital_boards)
@@ -578,6 +583,49 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self._boards_spin.setValue(dialog.get_num_digital_boards())
             self.num_digital_boards = dialog.get_num_digital_boards()
+
+    def _manual_add_round(self):
+        if not self.session:
+            QMessageBox.warning(self, "Error", "Please open a tournament first")
+            return
+
+        max_round = get_max_round(self.session, self.tournament_id)
+        next_round_num = max_round + 1 if max_round else 1
+
+        dialog = ManualRoundDialog(self, next_round_num)
+        if dialog.exec():
+            round_num, pairings_dict = dialog.get_data()
+
+            try:
+                pairings = [
+                    PairingData(
+                        participant1_name=p["participant1"],
+                        participant2_name=p["participant2"],
+                        board_number=p.get("board_number"),
+                    )
+                    for p in pairings_dict
+                ]
+                round_data = RoundData(round_number=round_num, pairings=pairings)
+                tournament_type = get_tournament(
+                    self.session, self.tournament_id
+                ).tournament_type
+                import_rounds_from_data(
+                    self.session, self.tournament_id, [round_data], tournament_type
+                )
+
+                self._load_rounds()
+                self._load_participants()
+
+                if self._round_combo.count() > 0:
+                    self._round_combo.setCurrentIndex(self._round_combo.count() - 1)
+
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Added Round {round_num} with {len(pairings)} pairing(s)",
+                )
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to add round: {e}")
 
     def _export(self, format_type: str):
         dialog = ExportDialog(self)

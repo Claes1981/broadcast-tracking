@@ -55,6 +55,8 @@ def allocate_digital_boards(
                 .first()
             )
             if existing and existing.is_manual:
+                if existing.digital_board_label:
+                    result.append((pairing, existing.digital_board_label))
                 continue
             if existing:
                 session.delete(existing)
@@ -106,6 +108,15 @@ def allocate_digital_boards(
 
     result = []
     for i, (pairing, _) in enumerate(selected_pairings):
+        existing = (
+            session.query(DigitalAssignment)
+            .filter(DigitalAssignment.pairing_id == pairing.id)
+            .first()
+        )
+        if existing and existing.is_manual:
+            if existing.digital_board_label:
+                result.append((pairing, existing.digital_board_label))
+            continue
         label = digital_labels[i]
         assignment = DigitalAssignment(
             pairing_id=pairing.id,

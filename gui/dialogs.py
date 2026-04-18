@@ -10,8 +10,15 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QFileDialog,
     QSpinBox,
+    QListWidget,
+    QListWidgetItem,
+    QWidget,
+    QTableWidget,
+    QTableWidgetItem,
 )
 from PyQt6.QtCore import Qt
+
+from logic.pairing import PairingData
 
 
 class NewTournamentDialog(QDialog):
@@ -235,3 +242,166 @@ class ExportDialog(QDialog):
 
     def get_file_path(self) -> str:
         return self._file_edit.text()
+
+
+class ManualPairingDialog(QDialog):
+    """Dialog for entering a single pairing."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add Pairing")
+        self.setMinimumWidth(350)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        form_layout = QFormLayout()
+
+        p1_edit = QLineEdit()
+        p1_edit.setPlaceholderText("First participant name")
+        form_layout.addRow("Participant 1:", p1_edit)
+
+        p2_edit = QLineEdit()
+        p2_edit.setPlaceholderText("Second participant name")
+        form_layout.addRow("Participant 2:", p2_edit)
+
+        board_spin = QSpinBox()
+        board_spin.setRange(1, 999)
+        board_spin.setValue(1)
+        form_layout.addRow("Board Number:", board_spin)
+
+        layout.addLayout(form_layout)
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("OK")
+        ok_btn.setDefault(True)
+        ok_btn.clicked.connect(self.accept)
+        button_layout.addWidget(ok_btn)
+
+        layout.addLayout(button_layout)
+
+        self._p1_edit = p1_edit
+        self._p2_edit = p2_edit
+        self._board_spin = board_spin
+
+    def get_data(self) -> tuple[str, str, int]:
+        return (
+            self._p1_edit.text().strip(),
+            self._p2_edit.text().strip(),
+            self._board_spin.value(),
+        )
+
+
+class ManualRoundDialog(QDialog):
+    """Dialog for manually entering a round with pairings."""
+
+    def __init__(self, parent=None, round_number: int = 1):
+        super().__init__(parent)
+        self.setWindowTitle("Add Round Manually")
+        self.setMinimumWidth(500)
+        self._setup_ui(round_number)
+
+    def _setup_ui(self, round_number: int):
+        layout = QVBoxLayout(self)
+
+        form_layout = QFormLayout()
+
+        round_spin = QSpinBox()
+        round_spin.setRange(1, 100)
+        round_spin.setValue(round_number)
+        form_layout.addRow("Round Number:", round_spin)
+
+        layout.addLayout(form_layout)
+
+        pairings_label = QLabel("Pairings:")
+        layout.addWidget(pairings_label)
+
+        self._pairings_table = QTableWidget()
+        self._pairings_table.setColumnCount(3)
+        self._pairings_table.setHorizontalHeaderLabels(
+            ["Participant 1", "Participant 2", "Board"]
+        )
+        self._pairings_table.setMinimumHeight(200)
+        layout.addWidget(self._pairings_table)
+
+        buttons_layout = QHBoxLayout()
+
+        add_btn = QPushButton("Add Pairing")
+        add_btn.clicked.connect(self._add_pairing)
+        buttons_layout.addWidget(add_btn)
+
+        remove_btn = QPushButton("Remove")
+        remove_btn.clicked.connect(self._remove_pairing)
+        buttons_layout.addWidget(remove_btn)
+
+        buttons_layout.addStretch()
+        layout.addLayout(buttons_layout)
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+
+        add_btn = QPushButton("Add Round")
+        add_btn.setDefault(True)
+        add_btn.clicked.connect(self._validate_and_accept)
+        button_layout.addWidget(add_btn)
+
+        layout.addLayout(button_layout)
+
+        self._round_spin = round_spin
+
+    def _add_pairing(self, p1: str = "", p2: str = "", board: int = 1):
+        """Add a pairing to the table."""
+        if not p1 or not p2:
+            dialog = ManualPairingDialog(self)
+            if not dialog.exec():
+                return
+            p1, p2, board = dialog.get_data()
+
+        row = self._pairings_table.rowCount()
+        self._pairings_table.insertRow(row)
+        self._pairings_table.setItem(row, 0, QTableWidgetItem(p1))
+        self._pairings_table.setItem(row, 1, QTableWidgetItem(p2))
+        self._pairings_table.setItem(row, 2, QTableWidgetItem(str(board)))
+
+    def _remove_pairing(self):
+        """Remove selected pairing from table."""
+        current_row = self._pairings_table.currentRow()
+        if current_row >= 0:
+            self._pairings_table.removeRow(current_row)
+
+    def _validate_and_accept(self):
+        if self._pairings_table.rowCount() == 0:
+            QMessageBox.warning(self, "Error", "Please add at least one pairing")
+            return
+        self.accept()
+
+    def get_data(self) -> tuple[int, list[dict]]:
+        """Get round number and pairings as list of dicts."""
+        round_num = self._round_spin.value()
+        pairings = []
+
+        for row in range(self._pairings_table.rowCount()):
+            p1 = self._pairings_table.item(row, 0).text()
+            p2 = self._pairings_table.item(row, 1).text()
+            board = int(self._pairings_table.item(row, 2).text())
+
+            pairings.append(
+                {
+                    "participant1": p1,
+                    "participant2": p2,
+                    "board_number": board,
+                }
+            )
+
+        return round_num, pairings
