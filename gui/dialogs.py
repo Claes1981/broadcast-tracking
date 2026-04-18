@@ -17,8 +17,31 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
 )
 from PyQt6.QtCore import Qt
+from typing import Optional
 
 from logic.pairing import PairingData
+
+
+def _create_button_layout(
+    cancel_text: str = "Cancel", ok_text: str = "OK"
+) -> QHBoxLayout:
+    """Create a standard button layout with Cancel and OK buttons."""
+    layout = QHBoxLayout()
+    layout.addStretch()
+
+    cancel_btn = QPushButton(cancel_text)
+    layout.addWidget(cancel_btn)
+
+    ok_btn = QPushButton(ok_text)
+    ok_btn.setDefault(True)
+    layout.addWidget(ok_btn)
+
+    return layout, cancel_btn, ok_btn
+
+
+def _validate_non_empty(text: str, field_name: str) -> bool:
+    """Validate that a text field is not empty."""
+    return len(text.strip()) > 0
 
 
 class NewTournamentDialog(QDialog):
@@ -33,6 +56,18 @@ class NewTournamentDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
+        form_layout = self._create_form_layout()
+        layout.addLayout(form_layout)
+
+        button_layout, cancel_btn, create_btn = _create_button_layout(
+            "Cancel", "Create"
+        )
+        cancel_btn.clicked.connect(self.reject)
+        create_btn.clicked.connect(self._on_create)
+        layout.addLayout(button_layout)
+
+    def _create_form_layout(self) -> QFormLayout:
+        """Create and populate the form layout."""
         form_layout = QFormLayout()
 
         name_edit = QLineEdit()
@@ -49,25 +84,18 @@ class NewTournamentDialog(QDialog):
         type_combo.addItems(["individual", "team"])
         form_layout.addRow("Tournament Type:", type_combo)
 
-        layout.addLayout(form_layout)
-
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
-        button_layout.addWidget(cancel_btn)
-
-        create_btn = QPushButton("Create")
-        create_btn.setDefault(True)
-        create_btn.clicked.connect(lambda: self.accept() if name_edit.text() else None)
-        button_layout.addWidget(create_btn)
-
-        layout.addLayout(button_layout)
-
         self._name_edit = name_edit
         self._url_edit = url_edit
         self._type_combo = type_combo
+
+        return form_layout
+
+    def _on_create(self):
+        """Handle create button click with validation."""
+        if not _validate_non_empty(self._name_edit.text(), "Tournament Name"):
+            QMessageBox.warning(self, "Error", "Please enter a tournament name")
+            return
+        self.accept()
 
     def get_data(self) -> tuple[str, str, str]:
         return (
@@ -84,11 +112,19 @@ class FetchPairingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Fetch Pairings")
         self.setMinimumWidth(400)
+        self._rounds_list: list[int] = []
         self._setup_ui(existing_url)
 
     def _setup_ui(self, existing_url: str):
         layout = QVBoxLayout(self)
 
+        self._add_info_section(layout)
+        self._add_url_input(layout, existing_url)
+        self._add_rounds_display(layout)
+        self._add_buttons(layout)
+
+    def _add_info_section(self, layout: QVBoxLayout):
+        """Add information label section."""
         info_label = QLabel(
             "Enter the tournament URL to fetch available rounds.\n"
             "Example: https://member.schack.se/ShowTournamentServlet?id=16441"
@@ -96,16 +132,22 @@ class FetchPairingsDialog(QDialog):
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
 
+    def _add_url_input(self, layout: QVBoxLayout, existing_url: str):
+        """Add URL input field."""
         url_edit = QLineEdit(existing_url)
         url_edit.setPlaceholderText(
             "https://member.schack.se/ShowTournamentServlet?id=XXXXX"
         )
         layout.addWidget(url_edit)
+        self._url_edit = url_edit
 
-        self._rounds_list = []
+    def _add_rounds_display(self, layout: QVBoxLayout):
+        """Add rounds display label."""
         self._rounds_label = QLabel("Available rounds will appear here...")
         layout.addWidget(self._rounds_label)
 
+    def _add_buttons(self, layout: QVBoxLayout):
+        """Add action buttons."""
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
@@ -114,16 +156,15 @@ class FetchPairingsDialog(QDialog):
         button_layout.addWidget(cancel_btn)
 
         fetch_btn = QPushButton("Fetch Rounds")
-        fetch_btn.clicked.connect(lambda: self._on_fetch(url_edit))
+        fetch_btn.clicked.connect(self._on_fetch)
         button_layout.addWidget(fetch_btn)
 
         layout.addLayout(button_layout)
 
-        self._url_edit = url_edit
-
-    def _on_fetch(self, url_edit: QLineEdit):
-        url = url_edit.text().strip()
-        if not url:
+    def _on_fetch(self):
+        """Handle fetch button click with validation."""
+        url = self._url_edit.text().strip()
+        if not _validate_non_empty(url, "URL"):
             QMessageBox.warning(self, "Error", "Please enter a URL")
             return
 
@@ -136,6 +177,10 @@ class FetchPairingsDialog(QDialog):
 
     def set_available_rounds(self, rounds: list[int]):
         self._rounds_list = rounds
+        self._update_rounds_display(rounds)
+
+    def _update_rounds_display(self, rounds: list[int]):
+        """Update the rounds display label."""
         if rounds:
             self._rounds_label.setText(
                 f"Available rounds: {', '.join(map(str, rounds))}"
@@ -156,6 +201,16 @@ class SettingsDialog(QDialog):
     def _setup_ui(self, num_digital_boards: int):
         layout = QVBoxLayout(self)
 
+        form_layout = self._create_form_layout(num_digital_boards)
+        layout.addLayout(form_layout)
+
+        button_layout, cancel_btn, ok_btn = _create_button_layout()
+        cancel_btn.clicked.connect(self.reject)
+        ok_btn.clicked.connect(self.accept)
+        layout.addLayout(button_layout)
+
+    def _create_form_layout(self, num_digital_boards: int) -> QFormLayout:
+        """Create and populate the form layout."""
         form_layout = QFormLayout()
 
         boards_spin = QSpinBox()
@@ -163,23 +218,9 @@ class SettingsDialog(QDialog):
         boards_spin.setValue(num_digital_boards)
         form_layout.addRow("Number of Digital Boards:", boards_spin)
 
-        layout.addLayout(form_layout)
-
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
-        button_layout.addWidget(cancel_btn)
-
-        ok_btn = QPushButton("OK")
-        ok_btn.setDefault(True)
-        ok_btn.clicked.connect(self.accept)
-        button_layout.addWidget(ok_btn)
-
-        layout.addLayout(button_layout)
-
         self._boards_spin = boards_spin
+
+        return form_layout
 
     def get_num_digital_boards(self) -> int:
         return self._boards_spin.value()
@@ -197,6 +238,12 @@ class ExportDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
+        self._add_format_selection(layout)
+        self._add_file_selection(layout)
+        self._add_buttons(layout)
+
+    def _add_format_selection(self, layout: QVBoxLayout):
+        """Add export format selection."""
         format_label = QLabel("Export format:")
         layout.addWidget(format_label)
 
@@ -204,6 +251,8 @@ class ExportDialog(QDialog):
         self._format_combo.addItems(["CSV", "JSON"])
         layout.addWidget(self._format_combo)
 
+    def _add_file_selection(self, layout: QVBoxLayout):
+        """Add file path selection."""
         self._file_edit = QLineEdit()
         self._file_edit.setPlaceholderText("Select file path...")
         self._file_edit.setReadOnly(True)
@@ -213,22 +262,26 @@ class ExportDialog(QDialog):
         browse_btn.clicked.connect(self._browse_file)
         layout.addWidget(browse_btn)
 
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        cancel_btn = QPushButton("Cancel")
+    def _add_buttons(self, layout: QVBoxLayout):
+        """Add action buttons."""
+        button_layout, cancel_btn, export_btn = _create_button_layout(
+            "Cancel", "Export"
+        )
         cancel_btn.clicked.connect(self.reject)
-        button_layout.addWidget(cancel_btn)
-
-        export_btn = QPushButton("Export")
-        export_btn.setDefault(True)
-        export_btn.clicked.connect(self.accept)
-        button_layout.addWidget(export_btn)
-
+        export_btn.clicked.connect(self._on_export)
         layout.addLayout(button_layout)
 
+    def _on_export(self):
+        """Handle export button click with validation."""
+        file_path = self._file_edit.text()
+        if not _validate_non_empty(file_path, "File path"):
+            QMessageBox.warning(self, "Error", "Please select a file path")
+            return
+        self.accept()
+
     def _browse_file(self):
-        format_ext = "csv" if self._format_combo.currentText() == "CSV" else "json"
+        """Open file browser dialog."""
+        format_ext = self._get_file_extension()
         filter_str = f"{format_ext.upper()} Files (*.{format_ext})"
 
         file_path, _ = QFileDialog.getSaveFileName(
@@ -236,6 +289,10 @@ class ExportDialog(QDialog):
         )
         if file_path:
             self._file_edit.setText(file_path)
+
+    def _get_file_extension(self) -> str:
+        """Get file extension based on selected format."""
+        return "csv" if self._format_combo.currentText() == "CSV" else "json"
 
     def get_format(self) -> str:
         return self._format_combo.currentText()
@@ -256,6 +313,16 @@ class ManualPairingDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
+        form_layout = self._create_form_layout()
+        layout.addLayout(form_layout)
+
+        button_layout, cancel_btn, ok_btn = _create_button_layout()
+        cancel_btn.clicked.connect(self.reject)
+        ok_btn.clicked.connect(self._on_ok)
+        layout.addLayout(button_layout)
+
+    def _create_form_layout(self) -> QFormLayout:
+        """Create and populate the form layout."""
         form_layout = QFormLayout()
 
         p1_edit = QLineEdit()
@@ -271,25 +338,25 @@ class ManualPairingDialog(QDialog):
         board_spin.setValue(1)
         form_layout.addRow("Board Number:", board_spin)
 
-        layout.addLayout(form_layout)
-
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
-        button_layout.addWidget(cancel_btn)
-
-        ok_btn = QPushButton("OK")
-        ok_btn.setDefault(True)
-        ok_btn.clicked.connect(self.accept)
-        button_layout.addWidget(ok_btn)
-
-        layout.addLayout(button_layout)
-
         self._p1_edit = p1_edit
         self._p2_edit = p2_edit
         self._board_spin = board_spin
+
+        return form_layout
+
+    def _on_ok(self):
+        """Handle OK button click with validation."""
+        p1 = self._p1_edit.text().strip()
+        p2 = self._p2_edit.text().strip()
+
+        if not _validate_non_empty(p1, "Participant 1"):
+            QMessageBox.warning(self, "Error", "Please enter first participant name")
+            return
+        if not _validate_non_empty(p2, "Participant 2"):
+            QMessageBox.warning(self, "Error", "Please enter second participant name")
+            return
+
+        self.accept()
 
     def get_data(self) -> tuple[str, str, int]:
         return (
@@ -311,6 +378,13 @@ class ManualRoundDialog(QDialog):
     def _setup_ui(self, round_number: int):
         layout = QVBoxLayout(self)
 
+        self._add_round_number_input(layout, round_number)
+        self._add_pairings_table(layout)
+        self._add_pairing_controls(layout)
+        self._add_buttons(layout)
+
+    def _add_round_number_input(self, layout: QVBoxLayout, round_number: int):
+        """Add round number input field."""
         form_layout = QFormLayout()
 
         round_spin = QSpinBox()
@@ -319,7 +393,10 @@ class ManualRoundDialog(QDialog):
         form_layout.addRow("Round Number:", round_spin)
 
         layout.addLayout(form_layout)
+        self._round_spin = round_spin
 
+    def _add_pairings_table(self, layout: QVBoxLayout):
+        """Add pairings table widget."""
         pairings_label = QLabel("Pairings:")
         layout.addWidget(pairings_label)
 
@@ -331,6 +408,8 @@ class ManualRoundDialog(QDialog):
         self._pairings_table.setMinimumHeight(200)
         layout.addWidget(self._pairings_table)
 
+    def _add_pairing_controls(self, layout: QVBoxLayout):
+        """Add pairing control buttons."""
         buttons_layout = QHBoxLayout()
 
         add_btn = QPushButton("Add Pairing")
@@ -344,21 +423,14 @@ class ManualRoundDialog(QDialog):
         buttons_layout.addStretch()
         layout.addLayout(buttons_layout)
 
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        cancel_btn = QPushButton("Cancel")
+    def _add_buttons(self, layout: QVBoxLayout):
+        """Add dialog action buttons."""
+        button_layout, cancel_btn, add_btn = _create_button_layout(
+            "Cancel", "Add Round"
+        )
         cancel_btn.clicked.connect(self.reject)
-        button_layout.addWidget(cancel_btn)
-
-        add_btn = QPushButton("Add Round")
-        add_btn.setDefault(True)
-        add_btn.clicked.connect(self._validate_and_accept)
-        button_layout.addWidget(add_btn)
-
+        add_btn.clicked.connect(self._on_add_round)
         layout.addLayout(button_layout)
-
-        self._round_spin = round_spin
 
     def _add_pairing(self, p1: str = "", p2: str = "", board: int = 1):
         """Add a pairing to the table."""
@@ -368,6 +440,10 @@ class ManualRoundDialog(QDialog):
                 return
             p1, p2, board = dialog.get_data()
 
+        self._insert_pairing_row(p1, p2, board)
+
+    def _insert_pairing_row(self, p1: str, p2: str, board: int):
+        """Insert a pairing row into the table."""
         row = self._pairings_table.rowCount()
         self._pairings_table.insertRow(row)
         self._pairings_table.setItem(row, 0, QTableWidgetItem(p1))
@@ -380,28 +456,41 @@ class ManualRoundDialog(QDialog):
         if current_row >= 0:
             self._pairings_table.removeRow(current_row)
 
-    def _validate_and_accept(self):
-        if self._pairings_table.rowCount() == 0:
+    def _on_add_round(self):
+        """Handle add round button click with validation."""
+        if not self._has_pairings():
             QMessageBox.warning(self, "Error", "Please add at least one pairing")
             return
         self.accept()
 
+    def _has_pairings(self) -> bool:
+        """Check if table has any pairings."""
+        return self._pairings_table.rowCount() > 0
+
     def get_data(self) -> tuple[int, list[dict]]:
         """Get round number and pairings as list of dicts."""
         round_num = self._round_spin.value()
+        pairings = self._extract_pairings_from_table()
+        return round_num, pairings
+
+    def _extract_pairings_from_table(self) -> list[dict]:
+        """Extract pairings data from table."""
         pairings = []
 
         for row in range(self._pairings_table.rowCount()):
-            p1 = self._pairings_table.item(row, 0).text()
-            p2 = self._pairings_table.item(row, 1).text()
-            board = int(self._pairings_table.item(row, 2).text())
+            pairing = self._get_pairing_from_row(row)
+            pairings.append(pairing)
 
-            pairings.append(
-                {
-                    "participant1": p1,
-                    "participant2": p2,
-                    "board_number": board,
-                }
-            )
+        return pairings
 
-        return round_num, pairings
+    def _get_pairing_from_row(self, row: int) -> dict:
+        """Get pairing data from a specific row."""
+        p1 = self._pairings_table.item(row, 0).text()
+        p2 = self._pairings_table.item(row, 1).text()
+        board = int(self._pairings_table.item(row, 2).text())
+
+        return {
+            "participant1": p1,
+            "participant2": p2,
+            "board_number": board,
+        }

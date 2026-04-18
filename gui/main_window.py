@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
+from typing import Optional
 
 from database import (
     get_all_participants,
@@ -60,6 +61,36 @@ from gui.dialogs import (
     ManualRoundDialog,
 )
 from utils.export import export_to_csv, export_to_json
+
+
+def _create_card_style(assignment) -> str:
+    """Determine card style based on assignment status."""
+    if not assignment:
+        return CARD_STYLE + NOT_ASSIGNED
+
+    if assignment.is_excluded:
+        return CARD_STYLE + MANUALLY_EXCLUDED
+
+    if assignment.digital_board_label:
+        return CARD_STYLE + (
+            MANUALLY_ASSIGNED if assignment.is_manual else DIGITAL_ASSIGNED
+        )
+
+    return CARD_STYLE + NOT_ASSIGNED
+
+
+def _create_status_text(assignment) -> str:
+    """Create status text based on assignment."""
+    if not assignment:
+        return "Not assigned"
+
+    if assignment.is_excluded:
+        return "EXCLUDED from digital boards"
+
+    if assignment.digital_board_label:
+        return f"Digital Board: {assignment.digital_board_label}"
+
+    return "Not assigned"
 
 
 class MainWindow(QMainWindow):
@@ -333,11 +364,21 @@ class MainWindow(QMainWindow):
 
     def _create_pairing_card(self, pairing) -> QWidget:
         card = QWidget()
-        card.setStyleSheet(CARD_STYLE)
-
         layout = QVBoxLayout(card)
         layout.setContentsMargins(10, 10, 10, 10)
 
+        self._add_pairing_title(layout, pairing)
+        self._add_pairing_status(layout, pairing)
+        self._add_pairing_stats(layout, pairing)
+        self._add_pairing_controls(layout, pairing)
+
+        assignment = get_digital_assignment(self.session, pairing.id)
+        card.setStyleSheet(_create_card_style(assignment))
+
+        return card
+
+    def _add_pairing_title(self, layout: QVBoxLayout, pairing):
+        """Add participant names to pairing card."""
         p1_name = pairing.participant1.name
         p2_name = pairing.participant2.name
 
@@ -345,27 +386,17 @@ class MainWindow(QMainWindow):
         title.setStyleSheet("font-weight: bold; font-size: 13px;")
         layout.addWidget(title)
 
+    def _add_pairing_status(self, layout: QVBoxLayout, pairing):
+        """Add assignment status to pairing card."""
         assignment = get_digital_assignment(self.session, pairing.id)
-
-        if assignment:
-            if assignment.is_excluded:
-                status_text = "EXCLUDED from digital boards"
-                card.setStyleSheet(CARD_STYLE + MANUALLY_EXCLUDED)
-            elif assignment.digital_board_label:
-                status_text = f"Digital Board: {assignment.digital_board_label}"
-                style = MANUALLY_ASSIGNED if assignment.is_manual else DIGITAL_ASSIGNED
-                card.setStyleSheet(CARD_STYLE + style)
-            else:
-                status_text = "Not assigned"
-                card.setStyleSheet(CARD_STYLE + NOT_ASSIGNED)
-        else:
-            status_text = "Not assigned"
-            card.setStyleSheet(CARD_STYLE + NOT_ASSIGNED)
+        status_text = _create_status_text(assignment)
 
         status = QLabel(status_text)
         status.setStyleSheet("font-size: 12px;")
         layout.addWidget(status)
 
+    def _add_pairing_stats(self, layout: QVBoxLayout, pairing):
+        """Add digital round statistics to pairing card."""
         count1 = count_digital_rounds_for_participant(
             self.session, pairing.participant1_id
         )
@@ -378,7 +409,10 @@ class MainWindow(QMainWindow):
         combined.setStyleSheet("font-size: 11px; color: #718096;")
         layout.addWidget(combined)
 
+    def _add_pairing_controls(self, layout: QVBoxLayout, pairing):
+        """Add control buttons to pairing card."""
         button_layout = QHBoxLayout()
+        assignment = get_digital_assignment(self.session, pairing.id)
 
         if assignment and assignment.digital_board_label:
             remove_btn = QPushButton("Remove")
@@ -391,16 +425,19 @@ class MainWindow(QMainWindow):
             assign_btn.clicked.connect(lambda: self._manual_assign(pairing.id))
             button_layout.addWidget(assign_btn)
 
-        toggle_btn = QPushButton(
-            "Exclude" if not (assignment and assignment.is_excluded) else "Include"
-        )
-        toggle_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
-        toggle_btn.clicked.connect(lambda: self._toggle_exclude(pairing.id))
+        toggle_btn = self._create_toggle_button(assignment)
         button_layout.addWidget(toggle_btn)
 
         layout.addLayout(button_layout)
 
-        return card
+    def _create_toggle_button(self, assignment) -> QPushButton:
+        """Create exclude/include toggle button."""
+        is_excluded = assignment and assignment.is_excluded
+        text = "Include" if is_excluded else "Exclude"
+
+        toggle_btn = QPushButton(text)
+        toggle_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
+        return toggle_btn
 
     def _refresh_current_view(self):
         self._load_participants()
@@ -520,63 +557,88 @@ class MainWindow(QMainWindow):
         scraper = SchackSeScraper()
 
         try:
-            name, rounds = scraper.fetch_all_rounds(url)
-
-            if not rounds:
-                QMessageBox.warning(
-                    self, "Warning", "No rounds found at the specified URL"
-                )
-                return
-
-            rounds_to_fetch = []
-            for r in rounds:
-                if get_round(self.session, self.tournament_id, r) is None:
-                    rounds_to_fetch.append(r)
-
-            if not rounds_to_fetch:
-                reply = QMessageBox.question(
-                    self,
-                    "Confirm",
-                    f"All rounds already exist. Re-fetch and overwrite?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                )
-                if reply == QMessageBox.StandardButton.No:
-                    return
-                rounds_to_fetch = rounds
-
-            tournament_type = get_tournament(
-                self.session, self.tournament_id
-            ).tournament_type
-
-            for round_num in rounds_to_fetch:
-                pairings_data = scraper.fetch_round_pairings(url, round_num)
-                pairings = [
-                    PairingData(
-                        participant1_name=p["participant1"],
-                        participant2_name=p["participant2"],
-                        board_number=p.get("board_number"),
-                        score1=p.get("score1"),
-                        score2=p.get("score2"),
-                    )
-                    for p in pairings_data
-                ]
-                round_data = RoundData(round_number=round_num, pairings=pairings)
-                import_rounds_from_data(
-                    self.session, self.tournament_id, [round_data], tournament_type
-                )
-
-            self._load_rounds()
-            self._load_participants()
-
-            if self._round_combo.count() > 0:
-                self._round_combo.setCurrentIndex(self._round_combo.count() - 1)
-
-            QMessageBox.information(
-                self, "Success", f"Fetched {len(rounds_to_fetch)} round(s)"
-            )
-
+            self._fetch_and_import_rounds(scraper, url)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to fetch pairings: {e}")
+
+    def _fetch_and_import_rounds(self, scraper: SchackSeScraper, url: str):
+        """Fetch rounds from URL and import them."""
+        name, rounds = scraper.fetch_all_rounds(url)
+
+        if not rounds:
+            QMessageBox.warning(self, "Warning", "No rounds found at the specified URL")
+            return
+
+        rounds_to_fetch = self._determine_rounds_to_fetch(rounds)
+        tournament_type = get_tournament(
+            self.session, self.tournament_id
+        ).tournament_type
+
+        for round_num in rounds_to_fetch:
+            self._import_round_from_scraper(scraper, url, round_num, tournament_type)
+
+        self._load_rounds()
+        self._load_participants()
+        self._select_last_round()
+
+        QMessageBox.information(
+            self, "Success", f"Fetched {len(rounds_to_fetch)} round(s)"
+        )
+
+    def _determine_rounds_to_fetch(self, rounds: list[int]) -> list[int]:
+        """Determine which rounds need to be fetched."""
+        rounds_to_fetch = []
+        for r in rounds:
+            if get_round(self.session, self.tournament_id, r) is None:
+                rounds_to_fetch.append(r)
+
+        if not rounds_to_fetch:
+            if not self._confirm_overwrite():
+                return []
+            rounds_to_fetch = rounds
+
+        return rounds_to_fetch
+
+    def _confirm_overwrite(self) -> bool:
+        """Ask user if they want to overwrite existing rounds."""
+        reply = QMessageBox.question(
+            self,
+            "Confirm",
+            f"All rounds already exist. Re-fetch and overwrite?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def _import_round_from_scraper(
+        self, scraper: SchackSeScraper, url: str, round_num: int, tournament_type: str
+    ):
+        """Import a single round from scraper."""
+        pairings_data = scraper.fetch_round_pairings(url, round_num)
+        pairings = self._create_pairing_data_from_scraper(pairings_data)
+        round_data = RoundData(round_number=round_num, pairings=pairings)
+        import_rounds_from_data(
+            self.session, self.tournament_id, [round_data], tournament_type
+        )
+
+    def _create_pairing_data_from_scraper(
+        self, pairings_data: list[dict]
+    ) -> list[PairingData]:
+        """Create PairingData objects from scraper data."""
+        return [
+            PairingData(
+                participant1_name=p["participant1"],
+                participant2_name=p["participant2"],
+                board_number=p.get("board_number"),
+                score1=p.get("score1"),
+                score2=p.get("score2"),
+            )
+            for p in pairings_data
+        ]
+
+    def _select_last_round(self):
+        """Select the last round in the combo box."""
+        if self._round_combo.count() > 0:
+            self._round_combo.setCurrentIndex(self._round_combo.count() - 1)
 
     def _show_settings(self):
         dialog = SettingsDialog(self, self._boards_spin.value())
@@ -589,43 +651,57 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Please open a tournament first")
             return
 
-        max_round = get_max_round(self.session, self.tournament_id)
-        next_round_num = max_round + 1 if max_round else 1
-
+        next_round_num = self._get_next_round_number()
         dialog = ManualRoundDialog(self, next_round_num)
-        if dialog.exec():
-            round_num, pairings_dict = dialog.get_data()
 
-            try:
-                pairings = [
-                    PairingData(
-                        participant1_name=p["participant1"],
-                        participant2_name=p["participant2"],
-                        board_number=p.get("board_number"),
-                    )
-                    for p in pairings_dict
-                ]
-                round_data = RoundData(round_number=round_num, pairings=pairings)
-                tournament_type = get_tournament(
-                    self.session, self.tournament_id
-                ).tournament_type
-                import_rounds_from_data(
-                    self.session, self.tournament_id, [round_data], tournament_type
-                )
+        if not dialog.exec():
+            return
 
-                self._load_rounds()
-                self._load_participants()
+        try:
+            self._import_manual_round(dialog)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to add round: {e}")
 
-                if self._round_combo.count() > 0:
-                    self._round_combo.setCurrentIndex(self._round_combo.count() - 1)
+    def _get_next_round_number(self) -> int:
+        """Calculate the next round number."""
+        max_round = get_max_round(self.session, self.tournament_id)
+        return max_round + 1 if max_round else 1
 
-                QMessageBox.information(
-                    self,
-                    "Success",
-                    f"Added Round {round_num} with {len(pairings)} pairing(s)",
-                )
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to add round: {e}")
+    def _import_manual_round(self, dialog: ManualRoundDialog):
+        """Import a manually entered round."""
+        round_num, pairings_dict = dialog.get_data()
+        pairings = self._create_pairing_data_from_manual(pairings_dict)
+        round_data = RoundData(round_number=round_num, pairings=pairings)
+        tournament_type = get_tournament(
+            self.session, self.tournament_id
+        ).tournament_type
+
+        import_rounds_from_data(
+            self.session, self.tournament_id, [round_data], tournament_type
+        )
+
+        self._load_rounds()
+        self._load_participants()
+        self._select_last_round()
+
+        QMessageBox.information(
+            self,
+            "Success",
+            f"Added Round {round_num} with {len(pairings)} pairing(s)",
+        )
+
+    def _create_pairing_data_from_manual(
+        self, pairings_dict: list[dict]
+    ) -> list[PairingData]:
+        """Create PairingData objects from manual entry."""
+        return [
+            PairingData(
+                participant1_name=p["participant1"],
+                participant2_name=p["participant2"],
+                board_number=p.get("board_number"),
+            )
+            for p in pairings_dict
+        ]
 
     def _export(self, format_type: str):
         dialog = ExportDialog(self)
