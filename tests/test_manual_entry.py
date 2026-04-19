@@ -144,8 +144,8 @@ class TestManualPairingDialog:
         """Test getting pairing data from dialog."""
         dialog = ManualPairingDialog()
 
-        dialog._p1_edit.setText("Team Alpha")
-        dialog._p2_edit.setText("Team Beta")
+        dialog._p1_combo.setEditText("Team Alpha")
+        dialog._p2_combo.setEditText("Team Beta")
         dialog._board_spin.setValue(5)
 
         p1, p2, board = dialog.get_data()
@@ -163,6 +163,30 @@ class TestManualPairingDialog:
         assert p1 == ""
         assert p2 == ""
         assert board == 1
+
+    def test_dialog_with_participant_names(self, qt_app):
+        """Test that dropdown is populated with participant names."""
+        names = ["Zara", "Alice", "Morgan", "Bob"]
+        dialog = ManualPairingDialog(participant_names=names)
+
+        assert dialog._p1_combo.count() == 4
+        assert dialog._p2_combo.count() == 4
+
+        items_p1 = [dialog._p1_combo.itemText(i) for i in range(dialog._p1_combo.count())]
+        assert items_p1 == sorted(names)
+
+    def test_dialog_select_existing_participant(self, qt_app):
+        """Test selecting an existing participant from dropdown."""
+        names = ["Team Alpha", "Team Beta"]
+        dialog = ManualPairingDialog(participant_names=names)
+
+        dialog._p1_combo.setCurrentText("Team Alpha")
+        dialog._p2_combo.setCurrentText("Team Beta")
+
+        p1, p2, board = dialog.get_data()
+
+        assert p1 == "Team Alpha"
+        assert p2 == "Team Beta"
 
 
 # ============================================================================

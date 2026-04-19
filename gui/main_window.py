@@ -725,7 +725,9 @@ class MainWindow(QMainWindow):
             return
 
         next_round_num = self._get_next_round_number()
-        dialog = ManualRoundDialog(self, next_round_num)
+        participants = get_all_participants(self.session, self.tournament_id)
+        participant_names = [p.name for p in participants]
+        dialog = ManualRoundDialog(self, next_round_num, participant_names)
 
         if not dialog.exec():
             return

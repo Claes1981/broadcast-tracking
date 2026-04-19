@@ -304,16 +304,16 @@ class ExportDialog(QDialog):
 class ManualPairingDialog(QDialog):
     """Dialog for entering a single pairing."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, participant_names: list[str] | None = None):
         super().__init__(parent)
         self.setWindowTitle("Add Pairing")
         self.setMinimumWidth(350)
-        self._setup_ui()
+        self._setup_ui(participant_names or [])
 
-    def _setup_ui(self):
+    def _setup_ui(self, participant_names: list[str]):
         layout = QVBoxLayout(self)
 
-        form_layout = self._create_form_layout()
+        form_layout = self._create_form_layout(participant_names)
         layout.addLayout(form_layout)
 
         button_layout, cancel_btn, ok_btn = _create_button_layout()
@@ -321,33 +321,41 @@ class ManualPairingDialog(QDialog):
         ok_btn.clicked.connect(self._on_ok)
         layout.addLayout(button_layout)
 
-    def _create_form_layout(self) -> QFormLayout:
+    def _create_form_layout(self, participant_names: list[str]) -> QFormLayout:
         """Create and populate the form layout."""
         form_layout = QFormLayout()
 
-        p1_edit = QLineEdit()
-        p1_edit.setPlaceholderText("First participant name")
-        form_layout.addRow("Participant 1:", p1_edit)
+        p1_combo = QComboBox()
+        p1_combo.setEditable(True)
+        p1_combo.setInsertPolicy(QComboBox.InsertPolicy.InsertAtBottom)
+        p1_combo.setPlaceholderText("First participant name")
+        for name in sorted(participant_names):
+            p1_combo.addItem(name)
+        form_layout.addRow("Participant 1:", p1_combo)
 
-        p2_edit = QLineEdit()
-        p2_edit.setPlaceholderText("Second participant name")
-        form_layout.addRow("Participant 2:", p2_edit)
+        p2_combo = QComboBox()
+        p2_combo.setEditable(True)
+        p2_combo.setInsertPolicy(QComboBox.InsertPolicy.InsertAtBottom)
+        p2_combo.setPlaceholderText("Second participant name")
+        for name in sorted(participant_names):
+            p2_combo.addItem(name)
+        form_layout.addRow("Participant 2:", p2_combo)
 
         board_spin = QSpinBox()
         board_spin.setRange(1, 999)
         board_spin.setValue(1)
         form_layout.addRow("Board Number:", board_spin)
 
-        self._p1_edit = p1_edit
-        self._p2_edit = p2_edit
+        self._p1_combo = p1_combo
+        self._p2_combo = p2_combo
         self._board_spin = board_spin
 
         return form_layout
 
     def _on_ok(self):
         """Handle OK button click with validation."""
-        p1 = self._p1_edit.text().strip()
-        p2 = self._p2_edit.text().strip()
+        p1 = self._p1_combo.currentText().strip()
+        p2 = self._p2_combo.currentText().strip()
 
         if not _validate_non_empty(p1, "Participant 1"):
             QMessageBox.warning(self, "Error", "Please enter first participant name")
@@ -360,8 +368,8 @@ class ManualPairingDialog(QDialog):
 
     def get_data(self) -> tuple[str, str, int]:
         return (
-            self._p1_edit.text().strip(),
-            self._p2_edit.text().strip(),
+            self._p1_combo.currentText().strip(),
+            self._p2_combo.currentText().strip(),
             self._board_spin.value(),
         )
 
@@ -369,10 +377,16 @@ class ManualPairingDialog(QDialog):
 class ManualRoundDialog(QDialog):
     """Dialog for manually entering a round with pairings."""
 
-    def __init__(self, parent=None, round_number: int = 1):
+    def __init__(
+        self,
+        parent=None,
+        round_number: int = 1,
+        participant_names: list[str] | None = None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Add Round Manually")
         self.setMinimumWidth(500)
+        self._participant_names = participant_names or []
         self._setup_ui(round_number)
 
     def _setup_ui(self, round_number: int):
@@ -435,7 +449,7 @@ class ManualRoundDialog(QDialog):
     def _add_pairing(self, p1: str = "", p2: str = "", board: int = 1):
         """Add a pairing to the table."""
         if not p1 or not p2:
-            dialog = ManualPairingDialog(self)
+            dialog = ManualPairingDialog(self, self._participant_names)
             if not dialog.exec():
                 return
             p1, p2, board = dialog.get_data()
