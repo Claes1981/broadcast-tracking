@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QMenuBar,
     QFileDialog,
     QInputDialog,
+    QScrollArea,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
@@ -271,11 +272,16 @@ class MainWindow(QMainWindow):
         group = QGroupBox("Current Round Pairings")
         group_layout = QVBoxLayout(group)
 
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+
         self._pairings_widget = QWidget()
         self._pairings_layout = QVBoxLayout(self._pairings_widget)
         self._pairings_layout.setContentsMargins(0, 0, 0, 0)
 
-        group_layout.addWidget(self._pairings_widget)
+        scroll_area.setWidget(self._pairings_widget)
+        group_layout.addWidget(scroll_area)
 
         layout.addWidget(group)
 
