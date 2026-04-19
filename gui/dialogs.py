@@ -494,3 +494,61 @@ class ManualRoundDialog(QDialog):
             "participant2": p2,
             "board_number": board,
         }
+
+
+class EditPairingDialog(QDialog):
+    """Dialog for editing an existing pairing's participants."""
+
+    def __init__(self, parent=None, p1_name: str = "", p2_name: str = ""):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Pairing")
+        self.setMinimumWidth(350)
+        self._setup_ui(p1_name, p2_name)
+
+    def _setup_ui(self, p1_name: str, p2_name: str):
+        layout = QVBoxLayout(self)
+
+        form_layout = self._create_form_layout(p1_name, p2_name)
+        layout.addLayout(form_layout)
+
+        button_layout, cancel_btn, ok_btn = _create_button_layout()
+        cancel_btn.clicked.connect(self.reject)
+        ok_btn.clicked.connect(self._on_ok)
+        layout.addLayout(button_layout)
+
+    def _create_form_layout(self, p1_name: str, p2_name: str) -> QFormLayout:
+        """Create and populate the form layout."""
+        form_layout = QFormLayout()
+
+        p1_edit = QLineEdit(p1_name)
+        p1_edit.setPlaceholderText("First participant name")
+        form_layout.addRow("Participant 1:", p1_edit)
+
+        p2_edit = QLineEdit(p2_name)
+        p2_edit.setPlaceholderText("Second participant name")
+        form_layout.addRow("Participant 2:", p2_edit)
+
+        self._p1_edit = p1_edit
+        self._p2_edit = p2_edit
+
+        return form_layout
+
+    def _on_ok(self):
+        """Handle OK button click with validation."""
+        p1 = self._p1_edit.text().strip()
+        p2 = self._p2_edit.text().strip()
+
+        if not _validate_non_empty(p1, "Participant 1"):
+            QMessageBox.warning(self, "Error", "Please enter first participant name")
+            return
+        if not _validate_non_empty(p2, "Participant 2"):
+            QMessageBox.warning(self, "Error", "Please enter second participant name")
+            return
+
+        self.accept()
+
+    def get_data(self) -> tuple[str, str]:
+        return (
+            self._p1_edit.text().strip(),
+            self._p2_edit.text().strip(),
+        )

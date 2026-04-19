@@ -128,3 +128,66 @@ def delete_round(session: Session, round_id: int) -> bool:
     session.delete(round_obj)
     session.commit()
     return True
+
+
+def remove_pairing(session: Session, pairing_id: int) -> bool:
+    """Remove a pairing from a round."""
+    from database.models import DigitalAssignment
+
+    pairing = session.query(Pairing).filter(Pairing.id == pairing_id).first()
+    if not pairing:
+        return False
+
+    assignment = (
+        session.query(DigitalAssignment)
+        .filter(DigitalAssignment.pairing_id == pairing_id)
+        .first()
+    )
+    if assignment:
+        session.delete(assignment)
+    session.delete(pairing)
+    session.commit()
+    return True
+
+
+def edit_pairing(
+    session: Session,
+    pairing_id: int,
+    new_participant1_name: str,
+    new_participant2_name: str,
+) -> bool:
+    """Edit the participants of an existing pairing."""
+    from database.models import DigitalAssignment
+
+    pairing = session.query(Pairing).filter(Pairing.id == pairing_id).first()
+    if not pairing:
+        return False
+
+    tournament_id = (
+        session.query(Round.tournament_id)
+        .filter(Round.id == pairing.round_id)
+        .scalar()
+    )
+
+    p1 = get_participant_by_name(session, tournament_id, new_participant1_name)
+    if not p1:
+        p1 = Participant(
+            tournament_id=tournament_id,
+            name=new_participant1_name,
+            participant_type="team",
+        )
+        session.add(p1)
+
+    p2 = get_participant_by_name(session, tournament_id, new_participant2_name)
+    if not p2:
+        p2 = Participant(
+            tournament_id=tournament_id,
+            name=new_participant2_name,
+            participant_type="team",
+        )
+        session.add(p2)
+
+    pairing.participant1_id = p1.id
+    pairing.participant2_id = p2.id
+    session.commit()
+    return True

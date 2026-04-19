@@ -35,6 +35,7 @@ from database import (
     open_tournament,
     get_tournament,
 )
+from database.models import Pairing
 from logic import (
     allocate_digital_boards,
     clear_round_assignments,
@@ -42,6 +43,8 @@ from logic import (
     exclude_from_digital,
     import_rounds_from_data,
     generate_digital_board_labels,
+    remove_pairing,
+    edit_pairing,
 )
 from scrapers import SchackSeScraper
 from logic.pairing import RoundData, PairingData
@@ -60,6 +63,7 @@ from gui.dialogs import (
     SettingsDialog,
     ExportDialog,
     ManualRoundDialog,
+    EditPairingDialog,
 )
 from utils.export import export_to_csv, export_to_json
 
@@ -421,28 +425,49 @@ class MainWindow(QMainWindow):
         assignment = get_digital_assignment(self.session, pairing.id)
 
         if assignment and assignment.digital_board_label:
-            remove_btn = QPushButton("Remove")
-            remove_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
-            remove_btn.clicked.connect(lambda: self._remove_assignment(pairing.id))
-            button_layout.addWidget(remove_btn)
+            remove_assignment_btn = QPushButton("Remove Assignment")
+            remove_assignment_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
+            remove_assignment_btn.clicked.connect(
+                lambda checked, pid=pairing.id: self._remove_assignment(pid)
+            )
+            button_layout.addWidget(remove_assignment_btn)
         else:
             assign_btn = QPushButton("Assign")
             assign_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
-            assign_btn.clicked.connect(lambda: self._manual_assign(pairing.id))
+            assign_btn.clicked.connect(
+                lambda checked, pid=pairing.id: self._manual_assign(pid)
+            )
             button_layout.addWidget(assign_btn)
 
-        toggle_btn = self._create_toggle_button(assignment)
+        edit_btn = QPushButton("Edit")
+        edit_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
+        edit_btn.clicked.connect(
+            lambda checked, pid=pairing.id: self._edit_pairing(pid)
+        )
+        button_layout.addWidget(edit_btn)
+
+        remove_pairing_btn = QPushButton("Remove Pairing")
+        remove_pairing_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
+        remove_pairing_btn.clicked.connect(
+            lambda checked, pid=pairing.id: self._remove_pairing(pid)
+        )
+        button_layout.addWidget(remove_pairing_btn)
+
+        toggle_btn = self._create_toggle_button(assignment, pairing.id)
         button_layout.addWidget(toggle_btn)
 
         layout.addLayout(button_layout)
 
-    def _create_toggle_button(self, assignment) -> QPushButton:
+    def _create_toggle_button(self, assignment, pairing_id) -> QPushButton:
         """Create exclude/include toggle button."""
         is_excluded = assignment and assignment.is_excluded
         text = "Include" if is_excluded else "Exclude"
 
         toggle_btn = QPushButton(text)
         toggle_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
+        toggle_btn.clicked.connect(
+            lambda checked, pid=pairing_id: self._toggle_exclude(pid)
+        )
         return toggle_btn
 
     def _refresh_current_view(self):
@@ -507,6 +532,48 @@ class MainWindow(QMainWindow):
             self._refresh_current_view()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to remove: {e}")
+
+    def _edit_pairing(self, pairing_id: int):
+        pairing = (
+            self.session.query(Pairing)
+            .filter(Pairing.id == pairing_id)
+            .first()
+        )
+        if not pairing:
+            return
+
+        dialog = EditPairingDialog(
+            self,
+            pairing.participant1.name,
+            pairing.participant2.name,
+        )
+
+        if not dialog.exec():
+            return
+
+        try:
+            new_p1, new_p2 = dialog.get_data()
+            edit_pairing(self.session, pairing_id, new_p1, new_p2)
+            self._refresh_current_view()
+            QMessageBox.information(self, "Success", "Pairing updated")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to edit pairing: {e}")
+
+    def _remove_pairing(self, pairing_id: int):
+        reply = QMessageBox.question(
+            self,
+            "Confirm",
+            "Remove this pairing?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                remove_pairing(self.session, pairing_id)
+                self._refresh_current_view()
+                QMessageBox.information(self, "Success", "Pairing removed")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to remove pairing: {e}")
 
     def _toggle_exclude(self, pairing_id: int):
         assignment = get_digital_assignment(self.session, pairing_id)

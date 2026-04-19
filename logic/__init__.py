@@ -11,5 +11,7 @@ from logic.tournament import (
     import_rounds_from_data,
     get_tournament_stats,
     delete_round,
+    remove_pairing,
+    edit_pairing,
 )
 from logic.pairing import PairingData, RoundData, TournamentData
