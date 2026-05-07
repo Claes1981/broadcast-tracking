@@ -686,6 +686,61 @@ class TestScraperOffline:
         rounds = scraper.parse_rounds("<html>invalid</html>")
         assert isinstance(rounds, list)
 
+    def test_fetch_round_url_fallback_to_team_tournament(self):
+        """Test that fetch_round_url falls back to team tournament URL on 404."""
+        scraper = SchackSeScraper()
+
+        mock_response_individual = Mock()
+        mock_response_individual.status_code = 404
+
+        mock_response_team = Mock()
+        mock_response_team.status_code = 200
+        mock_response_team.text = "<html>Team tournament data</html>"
+
+        with patch.object(scraper.session, "get", side_effect=[
+            mock_response_individual, mock_response_team
+        ]) as mock_get:
+            result = scraper.fetch_round_url(
+                "https://member.schack.se/tournament?id=17852", 1
+            )
+
+            assert "<html>Team tournament data</html>" in result
+            assert mock_get.call_count == 2
+
+            first_call_url = mock_get.call_args_list[0][0][0]
+            second_call_url = mock_get.call_args_list[1][0][0]
+
+            assert "ShowTournamentGroupMatchesServlet" in first_call_url
+            assert "ShowTournamentServlet" in second_call_url
+            assert "id=17852" in second_call_url
+            assert "round=1" in second_call_url
+
+    def test_fetch_round_url_uses_individual_when_available(self):
+        """Test that fetch_round_url uses individual URL when it succeeds."""
+        scraper = SchackSeScraper()
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "<html>Individual tournament data</html>"
+
+        with patch.object(scraper.session, "get", return_value=mock_response) as mock_get:
+            result = scraper.fetch_round_url(
+                "https://member.schack.se/tournament?id=123", 2
+            )
+
+            assert mock_get.call_count == 1
+            call_url = mock_get.call_args_list[0][0][0]
+            assert "ShowTournamentGroupMatchesServlet" in call_url
+            assert "id=123" in call_url
+            assert "round=2" in call_url
+
+    def test_fetch_round_url_missing_tournament_id(self):
+        """Test that fetch_round_url raises error for invalid URL."""
+        scraper = SchackSeScraper()
+
+        with pytest.raises(ValueError, match="Could not extract tournament ID"):
+            scraper.fetch_round_url("https://member.schack.se/tournament", 1)
+
 
 class TestScraperParsing:
     """Tests for scraper parsing logic."""
@@ -771,6 +826,297 @@ class TestScraperParsing:
 
         assert pairings[0]["score1"] == 3.5
         assert pairings[0]["score2"] == 0.5
+
+    def test_parse_rounds_team_tournament_with_links(self):
+        """Test parsing rounds from team tournament with ShowTournamentServlet links."""
+        scraper = SchackSeScraper()
+
+        html = """
+        <html>
+        <body>
+        <table>
+        <tr>
+            <th><a href="/ShowTournamentServlet?id=17852&round=1">Runda 1</a></th>
+            <th><a href="/ShowTournamentServlet?id=17852&round=2">Runda 2</a></th>
+            <th><a href="/ShowTournamentServlet?id=17852&round=3">Runda 3</a></th>
+        </tr>
+        </table>
+        </body>
+        </html>
+        """
+
+        rounds = scraper.parse_rounds(html)
+        assert rounds == [1, 2, 3]
+
+    def test_parse_rounds_team_tournament_with_table(self):
+        """Test parsing rounds from team tournament with table-based round numbers."""
+        scraper = SchackSeScraper()
+
+        html = """
+        <html>
+        <body>
+        <table>
+        <tr>
+            <th class="header">RONDA</th>
+            <th class="header">DATUM</th>
+            <th class="header">HEMMALAG</th>
+            <th class="header">BORTALAG</th>
+            <th class="header">RESULTAT</th>
+        </tr>
+        <tr>
+            <td>1</td><td>2026-01-10</td><td>SS Manhem II</td><td>Lunds ASK</td><td>2-2</td>
+        </tr>
+        <tr>
+            <td>2</td><td>2026-01-24</td><td>Kivik</td><td>SS Manhem II</td><td>1-3</td>
+        </tr>
+        <tr>
+            <td>3</td><td>2026-02-07</td><td>Lunds ASK</td><td>Kivik</td><td>3-1</td>
+        </tr>
+        <tr>
+            <td>4</td><td>2026-02-21</td><td>SS Manhem II</td><td>Trollhättan</td><td>2-2</td>
+        </tr>
+        <tr>
+            <td>5</td><td>2026-03-07</td><td>Trollhättan</td><td>SS Manhem II</td><td>0-4</td>
+        </tr>
+        <tr>
+            <td>6</td><td>2026-03-21</td><td>Kivik</td><td>Lunds ASK</td><td>1-3</td>
+        </tr>
+        </table>
+        </body>
+        </html>
+        """
+
+        rounds = scraper.parse_rounds(html)
+        assert rounds == [1, 2, 3, 4, 5, 6]
+
+    def test_parse_rounds_team_tournament_rond_header(self):
+        """Test parsing rounds with 'ROND' header (Swedish abbreviation)."""
+        scraper = SchackSeScraper()
+
+        html = """
+        <html>
+        <body>
+        <table>
+        <tr>
+            <th class="header">ROND</th>
+            <th class="header">DATUM</th>
+            <th class="header">HEMMALAG</th>
+            <th class="header">BORTALAG</th>
+        </tr>
+        <tr>
+            <td>1</td><td>2026-01-10</td><td>Team A</td><td>Team B</td>
+        </tr>
+        <tr>
+            <td>2</td><td>2026-01-24</td><td>Team B</td><td>Team A</td>
+        </tr>
+        </table>
+        </body>
+        </html>
+        """
+
+        rounds = scraper.parse_rounds(html)
+        assert rounds == [1, 2]
+
+    def test_parse_rounds_individual_tournament_priority(self):
+        """Test that individual tournament links are found first."""
+        scraper = SchackSeScraper()
+
+        html = """
+        <html>
+        <body>
+        <a href="/ShowTournamentGroupMatchesServlet?id=123&round=1">Round 1</a>
+        <a href="/ShowTournamentGroupMatchesServlet?id=123&round=2">Round 2</a>
+        <a href="/ShowTournamentServlet?id=123&round=3">Round 3</a>
+        </body>
+        </html>
+        """
+
+        rounds = scraper.parse_rounds(html)
+        assert rounds == [1, 2, 3]
+
+    def test_parse_pairings_team_tournament_format(self):
+        """Test parsing pairings from team tournament HTML with HEMMALAG/BORTALAG."""
+        scraper = SchackSeScraper()
+
+        html = """
+        <html>
+        <body>
+        <table>
+        <tr>
+            <th class="header">RONDA</th>
+            <th class="header">DATUM</th>
+            <th class="header">HEMMALAG</th>
+            <th class="header">BORTALAG</th>
+            <th class="header">RESULTAT</th>
+            <th class="header">KOMMENTAR</th>
+        </tr>
+        <tr>
+            <td>1</td><td>2026-01-10</td>
+            <td>SS Manhem II</td><td>Lunds ASK</td>
+            <td>2 - 2</td><td></td>
+        </tr>
+        <tr>
+            <td>1</td><td>2026-01-10</td>
+            <td>Kivik</td><td>Trollhättan</td>
+            <td>3 - 1</td><td></td>
+        </tr>
+        <tr>
+            <td>1</td><td>2026-01-10</td>
+            <td>Partille</td><td>Örgryte</td>
+            <td>½ - 3½</td><td></td>
+        </tr>
+        </table>
+        </body>
+        </html>
+        """
+
+        pairings = scraper.parse_round_pairings(html, 1)
+
+        assert len(pairings) == 3
+        assert pairings[0]["participant1"] == "SS Manhem II"
+        assert pairings[0]["participant2"] == "Lunds ASK"
+        assert pairings[0]["score1"] == 2.0
+        assert pairings[0]["score2"] == 2.0
+
+        assert pairings[1]["participant1"] == "Kivik"
+        assert pairings[1]["participant2"] == "Trollhättan"
+        assert pairings[1]["score1"] == 3.0
+        assert pairings[1]["score2"] == 1.0
+
+        assert pairings[2]["participant1"] == "Partille"
+        assert pairings[2]["participant2"] == "Örgryte"
+        assert pairings[2]["score1"] == 0.5
+        assert pairings[2]["score2"] == 3.5
+
+    def test_parse_pairings_team_tournament_with_empty_column(self):
+        """Test parsing pairings with empty column between HEMMALAG and BORTALAG.
+
+        Matches real schack.se HTML structure for tournament 17852.
+        """
+        scraper = SchackSeScraper()
+
+        html = """
+        <html>
+        <body>
+        <table>
+        <tr>
+            <th class="header">ROND</th>
+            <th class="header">DATUM</th>
+            <th class="header">HEMMALAG</th>
+            <th class="header"></th>
+            <th class="header">BORTALAG</th>
+            <th class="header">RESULTAT</th>
+            <th class="header">KOMMENTAR</th>
+        </tr>
+        <tr>
+            <td>1</td><td>2026-01-10</td>
+            <td>SS Manhem II</td><td></td><td>E1536</td>
+            <td>0 - 6</td><td></td>
+        </tr>
+        <tr>
+            <td>1</td><td>2026-01-10</td>
+            <td>Limhamns SK</td><td></td><td>E1634</td>
+            <td>5½ - ½</td><td></td>
+        </tr>
+        </table>
+        </body>
+        </html>
+        """
+
+        pairings = scraper.parse_round_pairings(html, 1)
+
+        assert len(pairings) == 2
+        assert pairings[0]["participant1"] == "SS Manhem II"
+        assert pairings[0]["participant2"] == "E1536"
+        assert pairings[0]["score1"] == 0.0
+        assert pairings[0]["score2"] == 6.0
+
+        assert pairings[1]["participant1"] == "Limhamns SK"
+        assert pairings[1]["participant2"] == "E1634"
+        assert pairings[1]["score1"] == 5.5
+        assert pairings[1]["score2"] == 0.5
+
+    def test_parse_pairings_team_tournament_no_results(self):
+        """Test parsing pairings with no results yet (all empty scores)."""
+        scraper = SchackSeScraper()
+
+        html = """
+        <html>
+        <body>
+        <table>
+        <tr>
+            <th class="header">RONDA</th>
+            <th class="header">DATUM</th>
+            <th class="header">HEMMALAG</th>
+            <th class="header">BORTALAG</th>
+            <th class="header">RESULTAT</th>
+        </tr>
+        <tr>
+            <td>1</td><td>2026-01-10</td>
+            <td>Team A</td><td>Team B</td>
+            <td></td>
+        </tr>
+        </table>
+        </body>
+        </html>
+        """
+
+        pairings = scraper.parse_round_pairings(html, 1)
+
+        assert len(pairings) == 1
+        assert pairings[0]["score1"] is None
+        assert pairings[0]["score2"] is None
+
+    def test_parse_pairings_team_tournament_mixed_format(self):
+        """Test that greyproptable is preferred over team format when both exist."""
+        scraper = SchackSeScraper()
+
+        html = """
+        <html>
+        <body>
+        <table class="greyproptable">
+        <tr>
+            <td class="listheader">Individual Team A</td>
+            <td class="listheader">Individual Team B</td>
+            <td class="listheadercenter">2 - 2</td>
+        </tr>
+        </table>
+        <table>
+        <tr>
+            <th class="header">HEMMALAG</th>
+            <th class="header">BORTALAG</th>
+        </tr>
+        <tr>
+            <td>Team X</td><td>Team Y</td>
+        </tr>
+        </table>
+        </body>
+        </html>
+        """
+
+        pairings = scraper.parse_round_pairings(html, 1)
+
+        assert len(pairings) == 1
+        assert pairings[0]["participant1"] == "Individual Team A"
+
+    def test_parse_rounds_empty_html(self):
+        """Test parsing rounds from empty HTML."""
+        scraper = SchackSeScraper()
+        assert scraper.parse_rounds("") == []
+
+    def test_parse_rounds_no_round_links(self):
+        """Test parsing rounds when no round links exist."""
+        scraper = SchackSeScraper()
+
+        html = """
+        <html>
+        <body>
+        <p>No rounds available</p>
+        </body>
+        </html>
+        """
+
+        assert scraper.parse_rounds(html) == []
 
 
 # ============================================================================
