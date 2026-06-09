@@ -1,37 +1,8 @@
-from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Optional
 from bs4 import BeautifulSoup
 import requests
 import re
-
-
-class BaseScraper(ABC):
-    """Abstract base class for tournament scrapers."""
-
-    @abstractmethod
-    def fetch_tournament_url(self, url: str) -> str:
-        """Fetch the tournament page HTML."""
-        pass
-
-    @abstractmethod
-    def parse_tournament_name(self, html: str) -> str:
-        """Parse the tournament name from HTML."""
-        pass
-
-    @abstractmethod
-    def parse_rounds(self, html: str) -> List[int]:
-        """Parse list of round numbers from HTML."""
-        pass
-
-    @abstractmethod
-    def fetch_round_url(self, base_url: str, round_number: int) -> str:
-        """Fetch a specific round's HTML."""
-        pass
-
-    @abstractmethod
-    def parse_round_pairings(self, html: str, round_number: int) -> List[dict]:
-        """Parse pairings from a round's HTML."""
-        pass
+from .base import BaseScraper
 
 
 class SchackSeScraper(BaseScraper):
@@ -74,7 +45,7 @@ class SchackSeScraper(BaseScraper):
             return match.group(1)
         return None
 
-    def parse_rounds(self, html: str) -> List[int]:
+    def parse_rounds(self, html: str) -> list[int]:
         """Parse list of round numbers from the main tournament page.
 
         Handles both individual tournaments (ShowTournamentGroupMatchesServlet links)
@@ -144,7 +115,7 @@ class SchackSeScraper(BaseScraper):
         response.raise_for_status()
         return response.text
 
-    def parse_round_pairings(self, html: str, round_number: int) -> List[dict]:
+    def parse_round_pairings(self, html: str, round_number: int) -> list[dict]:
         """
         Parse pairings from a round's HTML.
 
@@ -296,7 +267,7 @@ class SchackSeScraper(BaseScraper):
 
         return None, None
 
-    def fetch_all_rounds(self, url: str) -> tuple[str, List[int]]:
+    def fetch_all_rounds(self, url: str) -> tuple[str, list[int]]:
         """
         Fetch tournament name and all available round numbers.
         """
@@ -305,7 +276,7 @@ class SchackSeScraper(BaseScraper):
         rounds = self.parse_rounds(html)
         return name, rounds
 
-    def fetch_round_pairings(self, base_url: str, round_number: int) -> List[dict]:
+    def fetch_round_pairings(self, base_url: str, round_number: int) -> list[dict]:
         """Fetch and parse pairings for a specific round."""
         html = self.fetch_round_url(base_url, round_number)
         return self.parse_round_pairings(html, round_number)
