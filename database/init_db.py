@@ -65,9 +65,9 @@ def create_tournament(
         session.commit()
         session.refresh(tournament)
         return db_path, tournament.id
-    except Exception as e:
+    except Exception:
         session.rollback()
-        raise e
+        raise
     finally:
         session.close()
 
