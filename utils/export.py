@@ -3,8 +3,26 @@ import json
 from pathlib import Path
 from sqlalchemy.orm import Session
 
-from database.models import Round, Pairing, DigitalAssignment
+from database.models import Round, Pairing, DigitalAssignment, Tournament
 from database.queries import get_tournament, get_all_rounds, get_all_participants
+
+
+def _prepare_export(
+    session: Session, tournament_id: int, output_path: str
+) -> tuple[Tournament, list[Round], Path]:
+    """Common export preparation: validate tournament, load rounds, resolve path."""
+    tournament = get_tournament(session, tournament_id)
+    if not tournament:
+        raise ValueError(f"Tournament {tournament_id} not found")
+
+    rounds = get_all_rounds(session, tournament_id)
+
+    resolved_path = Path(output_path)
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    if resolved_path.exists():
+        resolved_path = _get_unique_filename(resolved_path)
+
+    return tournament, rounds, resolved_path
 
 
 def export_to_csv(session: Session, tournament_id: int, output_path: str) -> Path:
@@ -19,21 +37,11 @@ def export_to_csv(session: Session, tournament_id: int, output_path: str) -> Pat
     Returns:
         Path to the created CSV file
     """
-    tournament = get_tournament(session, tournament_id)
-    if not tournament:
-        raise ValueError(f"Tournament {tournament_id} not found")
+    tournament, rounds, resolved_path = _prepare_export(
+        session, tournament_id, output_path
+    )
 
-    rounds = get_all_rounds(session, tournament_id)
-
-    # Ensure directory exists
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Handle filename collision
-    if output_path.exists():
-        output_path = _get_unique_filename(output_path)
-
-    with open(output_path, "w", newline="", encoding="utf-8") as csvfile:
+    with open(resolved_path, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.writer(csvfile)
 
         # Header
@@ -68,7 +76,7 @@ def export_to_csv(session: Session, tournament_id: int, output_path: str) -> Pat
                         ]
                     )
 
-    return output_path
+    return resolved_path
 
 
 def export_to_json(session: Session, tournament_id: int, output_path: str) -> Path:
@@ -83,11 +91,9 @@ def export_to_json(session: Session, tournament_id: int, output_path: str) -> Pa
     Returns:
         Path to the created JSON file
     """
-    tournament = get_tournament(session, tournament_id)
-    if not tournament:
-        raise ValueError(f"Tournament {tournament_id} not found")
-
-    rounds = get_all_rounds(session, tournament_id)
+    tournament, rounds, resolved_path = _prepare_export(
+        session, tournament_id, output_path
+    )
 
     # Build data structure
     data = {
@@ -136,18 +142,10 @@ def export_to_json(session: Session, tournament_id: int, output_path: str) -> Pa
 
         data["rounds"].append(round_data)
 
-    # Ensure directory exists
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Handle filename collision
-    if output_path.exists():
-        output_path = _get_unique_filename(output_path)
-
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(resolved_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
-    return output_path
+    return resolved_path
 
 
 def export_statistics(session: Session, tournament_id: int, output_path: str) -> Path:
@@ -162,12 +160,10 @@ def export_statistics(session: Session, tournament_id: int, output_path: str) ->
     Returns:
         Path to the created CSV file
     """
-    tournament = get_tournament(session, tournament_id)
-    if not tournament:
-        raise ValueError(f"Tournament {tournament_id} not found")
-
+    tournament, rounds, resolved_path = _prepare_export(
+        session, tournament_id, output_path
+    )
     participants = get_all_participants(session, tournament_id)
-    rounds = get_all_rounds(session, tournament_id)
 
     from database.queries import count_digital_rounds_for_participant
 
@@ -185,22 +181,14 @@ def export_statistics(session: Session, tournament_id: int, output_path: str) ->
     # Sort by digital rounds descending
     stats.sort(key=lambda x: x["digital_rounds"], reverse=True)
 
-    # Ensure directory exists
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Handle filename collision
-    if output_path.exists():
-        output_path = _get_unique_filename(output_path)
-
-    with open(output_path, "w", newline="", encoding="utf-8") as csvfile:
+    with open(resolved_path, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.DictWriter(
             csvfile, fieldnames=["participant", "digital_rounds", "total_rounds"]
         )
         writer.writeheader()
         writer.writerows(stats)
 
-    return output_path
+    return resolved_path
 
 
 def _get_unique_filename(path: Path) -> Path:
