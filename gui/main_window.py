@@ -30,6 +30,7 @@ from database import (
     get_round,
     get_round_pairings,
     get_digital_assignment,
+    get_pairing_by_id,
     count_digital_rounds_for_participant,
     get_max_round,
     open_tournament,
@@ -534,11 +535,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to remove: {e}")
 
     def _edit_pairing(self, pairing_id: int):
-        pairing = (
-            self.session.query(Pairing)
-            .filter(Pairing.id == pairing_id)
-            .first()
-        )
+        pairing = get_pairing_by_id(self.session, pairing_id)
         if not pairing:
             return
 

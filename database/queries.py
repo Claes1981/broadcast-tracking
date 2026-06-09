@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database.models import Tournament, Participant, Round, Pairing, DigitalAssignment
@@ -102,3 +103,8 @@ def get_max_round(session: Session, tournament_id: int) -> int:
     if not rounds:
         return 0
     return max(r.round_number for r in rounds)
+
+
+def get_pairing_by_id(session: Session, pairing_id: int) -> Optional[Pairing]:
+    """Get a pairing by its ID."""
+    return session.query(Pairing).filter(Pairing.id == pairing_id).first()

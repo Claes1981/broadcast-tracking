@@ -21,6 +21,7 @@ from database.queries import (
     get_round,
     get_round_pairings,
     get_digital_assignment,
+    get_pairing_by_id,
     count_digital_rounds_for_participant,
     get_participant_digital_counts,
     get_pairing_digital_sum,

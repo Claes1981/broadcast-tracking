@@ -11,6 +11,7 @@ from database.queries import (
     get_round,
     get_max_round,
     get_round_pairings,
+    get_pairing_by_id,
 )
 from logic.pairing import PairingData, RoundData
 
@@ -159,7 +160,7 @@ def edit_pairing(
     """Edit the participants of an existing pairing."""
     from database.models import DigitalAssignment
 
-    pairing = session.query(Pairing).filter(Pairing.id == pairing_id).first()
+    pairing = get_pairing_by_id(session, pairing_id)
     if not pairing:
         return False
 
@@ -168,13 +169,15 @@ def edit_pairing(
         .filter(Round.id == pairing.round_id)
         .scalar()
     )
+    tournament = get_tournament(session, tournament_id)
+    participant_type = tournament.tournament_type if tournament else "player"
 
     p1 = get_participant_by_name(session, tournament_id, new_participant1_name)
     if not p1:
         p1 = Participant(
             tournament_id=tournament_id,
             name=new_participant1_name,
-            participant_type="team",
+            participant_type=participant_type,
         )
         session.add(p1)
 
@@ -183,7 +186,7 @@ def edit_pairing(
         p2 = Participant(
             tournament_id=tournament_id,
             name=new_participant2_name,
-            participant_type="team",
+            participant_type=participant_type,
         )
         session.add(p2)
 
