@@ -50,13 +50,10 @@ from logic import (
 from scrapers import SchackSeScraper
 from logic.pairing import RoundData, PairingData
 from gui.styles import (
-    DIGITAL_ASSIGNED,
-    NOT_ASSIGNED,
-    MANUALLY_EXCLUDED,
-    MANUALLY_ASSIGNED,
     BUTTON_PRIMARY_STYLE,
     BUTTON_SECONDARY_STYLE,
-    CARD_STYLE,
+    create_card_style,
+    create_status_text,
 )
 from gui.dialogs import (
     NewTournamentDialog,
@@ -68,35 +65,6 @@ from gui.dialogs import (
 )
 from utils.export import export_to_csv, export_to_json
 
-
-def _create_card_style(assignment) -> str:
-    """Determine card style based on assignment status."""
-    if not assignment:
-        return CARD_STYLE + NOT_ASSIGNED
-
-    if assignment.is_excluded:
-        return CARD_STYLE + MANUALLY_EXCLUDED
-
-    if assignment.digital_board_label:
-        return CARD_STYLE + (
-            MANUALLY_ASSIGNED if assignment.is_manual else DIGITAL_ASSIGNED
-        )
-
-    return CARD_STYLE + NOT_ASSIGNED
-
-
-def _create_status_text(assignment) -> str:
-    """Create status text based on assignment."""
-    if not assignment:
-        return "Not assigned"
-
-    if assignment.is_excluded:
-        return "EXCLUDED from digital boards"
-
-    if assignment.digital_board_label:
-        return f"Digital Board: {assignment.digital_board_label}"
-
-    return "Not assigned"
 
 
 class MainWindow(QMainWindow):
@@ -384,7 +352,7 @@ class MainWindow(QMainWindow):
         self._add_pairing_controls(layout, pairing)
 
         assignment = get_digital_assignment(self.session, pairing.id)
-        card.setStyleSheet(_create_card_style(assignment))
+        card.setStyleSheet(create_card_style(assignment))
 
         return card
 
@@ -400,7 +368,7 @@ class MainWindow(QMainWindow):
     def _add_pairing_status(self, layout: QVBoxLayout, pairing):
         """Add assignment status to pairing card."""
         assignment = get_digital_assignment(self.session, pairing.id)
-        status_text = _create_status_text(assignment)
+        status_text = create_status_text(assignment)
 
         status = QLabel(status_text)
         status.setStyleSheet("font-size: 12px;")
@@ -614,6 +582,10 @@ class MainWindow(QMainWindow):
             self.load_tournament(file_path)
 
     def _fetch_pairings(self):
+        if not self.session:
+            QMessageBox.warning(self, "No tournament", "Please create or open a tournament first.")
+            return
+
         tournament = get_tournament(self.session, self.tournament_id)
         existing_url = tournament.source_url or ""
 
