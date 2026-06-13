@@ -315,8 +315,7 @@ class TestOfflineModeGui:
     """Tests for offline mode in GUI."""
 
     @patch("gui.main_window.QMessageBox")
-    @patch("gui.main_window.SchackSeScraper")
-    def test_fetch_with_network_error(self, mock_scraper, mock_messagebox, qt_app):
+    def test_fetch_with_network_error(self, mock_messagebox, qt_app):
         """Test fetching pairings when network is down."""
         from gui.main_window import MainWindow
         from database import create_tournament, get_session
@@ -342,12 +341,12 @@ class TestOfflineModeGui:
                 window.tournament_id = tournament_id
                 window.session = get_session(db_path)
 
-                # Mock scraper to raise network error
-                mock_scraper_instance = Mock()
-                mock_scraper_instance.fetch_all_rounds.side_effect = Exception(
+                # Mock presenter to raise network error
+                mock_presenter = Mock()
+                mock_presenter.fetch_and_import.side_effect = Exception(
                     "Network error"
                 )
-                mock_scraper.return_value = mock_scraper_instance
+                window._scraper_presenter = mock_presenter
 
                 # Try to fetch
                 window._do_fetch_pairings("https://member.schack.se/test")
