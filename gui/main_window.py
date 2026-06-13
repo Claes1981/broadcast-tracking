@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMenuBar,
     QFileDialog,
-    QInputDialog,
     QScrollArea,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -32,7 +31,6 @@ from database import (
     get_digital_assignment,
     get_pairing_by_id,
     count_digital_rounds_for_participant,
-    get_max_round,
     open_tournament,
     get_tournament,
 )
@@ -42,13 +40,10 @@ from logic import (
     clear_round_assignments,
     manually_assign_digital_board,
     exclude_from_digital,
-    import_rounds_from_data,
     generate_digital_board_labels,
     remove_pairing,
     edit_pairing,
 )
-from scrapers import SchackSeScraper
-from logic.pairing import RoundData, PairingData
 from gui.styles import (
     BUTTON_PRIMARY_STYLE,
     BUTTON_SECONDARY_STYLE,
@@ -64,7 +59,7 @@ from gui.dialogs import (
     EditPairingDialog,
 )
 from utils.export import export_to_csv, export_to_json
-
+from gui.presenters import ScraperPresenter, ManualEntryPresenter
 
 
 class MainWindow(QMainWindow):
@@ -560,6 +555,53 @@ class MainWindow(QMainWindow):
         if idx < self._round_combo.count():
             self._round_combo.setCurrentIndex(idx)
 
+    @property
+    def _scraper_presenter(self) -> ScraperPresenter:
+        """Lazily create scraper presenter."""
+        if not hasattr(self, "_scraper_presenter_instance"):
+            self._scraper_presenter_instance = ScraperPresenter(
+                self.session, self.tournament_id, self._on_rounds_fetched
+            )
+        return self._scraper_presenter_instance
+
+    @_scraper_presenter.setter
+    def _scraper_presenter(self, value: ScraperPresenter):
+        self._scraper_presenter_instance = value
+
+    @property
+    def _manual_entry_presenter(self) -> ManualEntryPresenter:
+        """Lazily create manual entry presenter."""
+        if not hasattr(self, "_manual_entry_presenter_instance"):
+            self._manual_entry_presenter_instance = ManualEntryPresenter(
+                self.session, self.tournament_id, self._on_round_added
+            )
+        return self._manual_entry_presenter_instance
+
+    @_manual_entry_presenter.setter
+    def _manual_entry_presenter(self, value: ManualEntryPresenter):
+        self._manual_entry_presenter_instance = value
+
+    def _on_rounds_fetched(self, count: int) -> None:
+        """Callback when scraper imports rounds."""
+        self._load_rounds()
+        self._load_participants()
+        self._select_last_round()
+        QMessageBox.information(self, "Success", f"Fetched {count} round(s)")
+
+    def _on_round_added(self, round_num: int, pairing_count: int) -> None:
+        """Callback when manual round is added."""
+        self._load_rounds()
+        self._load_participants()
+        self._select_last_round()
+        QMessageBox.information(
+            self, "Success", f"Added Round {round_num} with {pairing_count} pairing(s)"
+        )
+
+    def _select_last_round(self):
+        """Select the last round in the combo box."""
+        if self._round_combo.count() > 0:
+            self._round_combo.setCurrentIndex(self._round_combo.count() - 1)
+
     def _new_tournament(self):
         dialog = NewTournamentDialog(self)
         if dialog.exec():
@@ -596,91 +638,14 @@ class MainWindow(QMainWindow):
                 self._do_fetch_pairings(url)
 
     def _do_fetch_pairings(self, url: str):
-        scraper = SchackSeScraper()
-
         try:
-            self._fetch_and_import_rounds(scraper, url)
+            result = self._scraper_presenter.fetch_and_import(url)
+            if result == -1:
+                QMessageBox.warning(
+                    self, "Warning", "No rounds found at the specified URL"
+                )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to fetch pairings: {e}")
-
-    def _fetch_and_import_rounds(self, scraper: SchackSeScraper, url: str):
-        """Fetch rounds from URL and import them."""
-        name, rounds = scraper.fetch_all_rounds(url)
-
-        if not rounds:
-            QMessageBox.warning(self, "Warning", "No rounds found at the specified URL")
-            return
-
-        rounds_to_fetch = self._determine_rounds_to_fetch(rounds)
-        tournament_type = get_tournament(
-            self.session, self.tournament_id
-        ).tournament_type
-
-        for round_num in rounds_to_fetch:
-            self._import_round_from_scraper(scraper, url, round_num, tournament_type)
-
-        self._load_rounds()
-        self._load_participants()
-        self._select_last_round()
-
-        QMessageBox.information(
-            self, "Success", f"Fetched {len(rounds_to_fetch)} round(s)"
-        )
-
-    def _determine_rounds_to_fetch(self, rounds: list[int]) -> list[int]:
-        """Determine which rounds need to be fetched."""
-        rounds_to_fetch = []
-        for r in rounds:
-            if get_round(self.session, self.tournament_id, r) is None:
-                rounds_to_fetch.append(r)
-
-        if not rounds_to_fetch:
-            if not self._confirm_overwrite():
-                return []
-            rounds_to_fetch = rounds
-
-        return rounds_to_fetch
-
-    def _confirm_overwrite(self) -> bool:
-        """Ask user if they want to overwrite existing rounds."""
-        reply = QMessageBox.question(
-            self,
-            "Confirm",
-            f"All rounds already exist. Re-fetch and overwrite?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        return reply == QMessageBox.StandardButton.Yes
-
-    def _import_round_from_scraper(
-        self, scraper: SchackSeScraper, url: str, round_num: int, tournament_type: str
-    ):
-        """Import a single round from scraper."""
-        pairings_data = scraper.fetch_round_pairings(url, round_num)
-        pairings = self._create_pairing_data_from_scraper(pairings_data)
-        round_data = RoundData(round_number=round_num, pairings=pairings)
-        import_rounds_from_data(
-            self.session, self.tournament_id, [round_data], tournament_type
-        )
-
-    def _create_pairing_data_from_scraper(
-        self, pairings_data: list[dict]
-    ) -> list[PairingData]:
-        """Create PairingData objects from scraper data."""
-        return [
-            PairingData(
-                participant1_name=p["participant1"],
-                participant2_name=p["participant2"],
-                board_number=p.get("board_number"),
-                score1=p.get("score1"),
-                score2=p.get("score2"),
-            )
-            for p in pairings_data
-        ]
-
-    def _select_last_round(self):
-        """Select the last round in the combo box."""
-        if self._round_combo.count() > 0:
-            self._round_combo.setCurrentIndex(self._round_combo.count() - 1)
 
     def _show_settings(self):
         dialog = SettingsDialog(self, self._boards_spin.value())
@@ -693,59 +658,18 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Please open a tournament first")
             return
 
-        next_round_num = self._get_next_round_number()
-        participants = get_all_participants(self.session, self.tournament_id)
-        participant_names = [p.name for p in participants]
+        next_round_num = self._manual_entry_presenter.get_next_round_number()
+        participant_names = self._manual_entry_presenter.get_participant_names()
         dialog = ManualRoundDialog(self, next_round_num, participant_names)
 
         if not dialog.exec():
             return
 
         try:
-            self._import_manual_round(dialog)
+            round_num, pairings_dict = dialog.get_data()
+            self._manual_entry_presenter.import_manual_round(round_num, pairings_dict)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to add round: {e}")
-
-    def _get_next_round_number(self) -> int:
-        """Calculate the next round number."""
-        max_round = get_max_round(self.session, self.tournament_id)
-        return max_round + 1 if max_round else 1
-
-    def _import_manual_round(self, dialog: ManualRoundDialog):
-        """Import a manually entered round."""
-        round_num, pairings_dict = dialog.get_data()
-        pairings = self._create_pairing_data_from_manual(pairings_dict)
-        round_data = RoundData(round_number=round_num, pairings=pairings)
-        tournament_type = get_tournament(
-            self.session, self.tournament_id
-        ).tournament_type
-
-        import_rounds_from_data(
-            self.session, self.tournament_id, [round_data], tournament_type
-        )
-
-        self._load_rounds()
-        self._load_participants()
-        self._select_last_round()
-
-        QMessageBox.information(
-            self,
-            "Success",
-            f"Added Round {round_num} with {len(pairings)} pairing(s)",
-        )
-
-    def _create_pairing_data_from_manual(
-        self, pairings_dict: list[dict]
-    ) -> list[PairingData]:
-        """Create PairingData objects from manual entry."""
-        return [
-            PairingData(
-                participant1_name=p["participant1"],
-                participant2_name=p["participant2"],
-                board_number=p.get("board_number"),
-            )
-            for p in pairings_dict
-        ]
 
     def _export(self, format_type: str):
         dialog = ExportDialog(self)
