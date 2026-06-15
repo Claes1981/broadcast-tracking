@@ -18,19 +18,21 @@ from PyQt6.QtWidgets import (
     QMenuBar,
     QFileDialog,
     QScrollArea,
+    QInputDialog,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
 from typing import Optional
 
+from config import (
+    WINDOW_MIN_WIDTH,
+    WINDOW_MIN_HEIGHT,
+    LEFT_PANEL_WIDTH,
+    RIGHT_PANEL_WIDTH,
+)
 from database import (
-    get_all_participants,
-    get_all_rounds,
-    get_round,
-    get_round_pairings,
     get_digital_assignment,
     get_pairing_by_id,
-    count_digital_rounds_for_participant,
     open_tournament,
     get_tournament,
 )
@@ -47,8 +49,8 @@ from logic import (
 from gui.styles import (
     BUTTON_PRIMARY_STYLE,
     BUTTON_SECONDARY_STYLE,
-    create_card_style,
-    create_status_text,
+    create_card_style_from_data,
+    create_status_text_from_data,
 )
 from gui.dialogs import (
     NewTournamentDialog,
@@ -59,7 +61,8 @@ from gui.dialogs import (
     EditPairingDialog,
 )
 from utils.export import export_to_csv, export_to_json
-from gui.presenters import ScraperPresenter, ManualEntryPresenter
+from gui.presenters import ScraperPresenter, ManualEntryPresenter, RoundViewPresenter
+from gui.presenters.round_view_presenter import PairingCardData
 
 
 class MainWindow(QMainWindow):
@@ -74,7 +77,7 @@ class MainWindow(QMainWindow):
         self.num_digital_boards = 5
 
         self.setWindowTitle("Chess Tournament Digital Board Tracker")
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
 
         self._setup_menu()
         self._setup_ui()
@@ -159,7 +162,7 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
-        splitter.setSizes([400, 800])
+        splitter.setSizes([LEFT_PANEL_WIDTH, RIGHT_PANEL_WIDTH])
 
         main_layout.addWidget(splitter)
 
@@ -290,141 +293,123 @@ class MainWindow(QMainWindow):
                 self.session.close()
 
     def _load_rounds(self):
+        """Load round labels into the combo box."""
         self._round_combo.clear()
-        rounds = get_all_rounds(self.session, self.tournament_id)
-        for round_obj in rounds:
-            self._round_combo.addItem(f"Round {round_obj.round_number}")
+        for label in self._round_view_presenter.get_round_labels():
+            self._round_combo.addItem(label)
 
     def _load_participants(self):
+        """Load participant rows into the table."""
         self._players_table.setRowCount(0)
+        rows = self._round_view_presenter.get_participant_rows()
 
-        participants = get_all_participants(self.session, self.tournament_id)
-        participant_data = []
-
-        for p in participants:
-            digital_count = count_digital_rounds_for_participant(self.session, p.id)
-            participant_data.append((p.id, p.name, digital_count))
-
-        participant_data.sort(key=lambda x: (-x[2], x[1]))
-
-        for i, (pid, name, digital_count) in enumerate(participant_data):
+        for i, row in enumerate(rows):
             self._players_table.insertRow(i)
-            self._players_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
-            self._players_table.setItem(i, 1, QTableWidgetItem(name))
-            self._players_table.setItem(i, 2, QTableWidgetItem(str(digital_count)))
+            self._players_table.setItem(i, 0, QTableWidgetItem(str(row.rank)))
+            self._players_table.setItem(i, 1, QTableWidgetItem(row.name))
+            self._players_table.setItem(i, 2, QTableWidgetItem(str(row.digital_count)))
 
     def _on_round_changed(self, round_str: str):
+        """Handle round selection change."""
         if not round_str or not self.session:
             return
 
-        round_num = int(round_str.replace("Round ", ""))
-        round_obj = get_round(self.session, self.tournament_id, round_num)
+        round_obj = self._round_view_presenter.get_round_by_label(round_str)
+        if round_obj is None:
+            return
         self.current_round = round_obj
-
         self._load_pairings(round_obj)
 
     def _load_pairings(self, round_obj):
+        """Load pairing cards for the selected round."""
         self._pairings_layout.addWidget(QWidget())
         while self._pairings_layout.count() > 1:
             item = self._pairings_layout.takeAt(1)
             if item.widget():
                 item.widget().deleteLater()
 
-        pairings = get_round_pairings(self.session, round_obj.id)
-
-        for pairing in pairings:
-            card = self._create_pairing_card(pairing)
+        cards = self._round_view_presenter.get_pairing_cards(round_obj)
+        for card_data in cards:
+            card = self._create_pairing_card(card_data)
             self._pairings_layout.addWidget(card)
 
-    def _create_pairing_card(self, pairing) -> QWidget:
+    def _create_pairing_card(self, card_data: PairingCardData) -> QWidget:
+        """Create a pairing card widget from presenter data."""
         card = QWidget()
         layout = QVBoxLayout(card)
         layout.setContentsMargins(10, 10, 10, 10)
 
-        self._add_pairing_title(layout, pairing)
-        self._add_pairing_status(layout, pairing)
-        self._add_pairing_stats(layout, pairing)
-        self._add_pairing_controls(layout, pairing)
+        self._add_pairing_title(layout, card_data)
+        self._add_pairing_status(layout, card_data)
+        self._add_pairing_stats(layout, card_data)
+        self._add_pairing_controls(layout, card_data)
 
-        assignment = get_digital_assignment(self.session, pairing.id)
-        card.setStyleSheet(create_card_style(assignment))
+        card.setStyleSheet(create_card_style_from_data(card_data))
 
         return card
 
-    def _add_pairing_title(self, layout: QVBoxLayout, pairing):
+    def _add_pairing_title(self, layout: QVBoxLayout, data: PairingCardData):
         """Add participant names to pairing card."""
-        p1_name = pairing.participant1.name
-        p2_name = pairing.participant2.name
-
-        title = QLabel(f"{p1_name} vs {p2_name}")
+        title = QLabel(f"{data.p1_name} vs {data.p2_name}")
         title.setStyleSheet("font-weight: bold; font-size: 13px;")
         layout.addWidget(title)
 
-    def _add_pairing_status(self, layout: QVBoxLayout, pairing):
+    def _add_pairing_status(self, layout: QVBoxLayout, data: PairingCardData):
         """Add assignment status to pairing card."""
-        assignment = get_digital_assignment(self.session, pairing.id)
-        status_text = create_status_text(assignment)
-
+        status_text = create_status_text_from_data(data)
         status = QLabel(status_text)
         status.setStyleSheet("font-size: 12px;")
         layout.addWidget(status)
 
-    def _add_pairing_stats(self, layout: QVBoxLayout, pairing):
+    def _add_pairing_stats(self, layout: QVBoxLayout, data: PairingCardData):
         """Add digital round statistics to pairing card."""
-        count1 = count_digital_rounds_for_participant(
-            self.session, pairing.participant1_id
-        )
-        count2 = count_digital_rounds_for_participant(
-            self.session, pairing.participant2_id
-        )
         combined = QLabel(
-            f"Combined digital rounds: {count1} + {count2} = {count1 + count2}"
+            f"Combined digital rounds: {data.p1_count} + {data.p2_count} = {data.combined_count}"
         )
         combined.setStyleSheet("font-size: 11px; color: #718096;")
         layout.addWidget(combined)
 
-    def _add_pairing_controls(self, layout: QVBoxLayout, pairing):
+    def _add_pairing_controls(self, layout: QVBoxLayout, data: PairingCardData):
         """Add control buttons to pairing card."""
         button_layout = QHBoxLayout()
-        assignment = get_digital_assignment(self.session, pairing.id)
+        pairing_id = data.pairing.id
 
-        if assignment and assignment.digital_board_label:
+        if data.digital_label:
             remove_assignment_btn = QPushButton("Remove Assignment")
             remove_assignment_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
             remove_assignment_btn.clicked.connect(
-                lambda checked, pid=pairing.id: self._remove_assignment(pid)
+                lambda checked, pid=pairing_id: self._remove_assignment(pid)
             )
             button_layout.addWidget(remove_assignment_btn)
         else:
             assign_btn = QPushButton("Assign")
             assign_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
             assign_btn.clicked.connect(
-                lambda checked, pid=pairing.id: self._manual_assign(pid)
+                lambda checked, pid=pairing_id: self._manual_assign(pid)
             )
             button_layout.addWidget(assign_btn)
 
         edit_btn = QPushButton("Edit")
         edit_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
         edit_btn.clicked.connect(
-            lambda checked, pid=pairing.id: self._edit_pairing(pid)
+            lambda checked, pid=pairing_id: self._edit_pairing(pid)
         )
         button_layout.addWidget(edit_btn)
 
         remove_pairing_btn = QPushButton("Remove Pairing")
         remove_pairing_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
         remove_pairing_btn.clicked.connect(
-            lambda checked, pid=pairing.id: self._remove_pairing(pid)
+            lambda checked, pid=pairing_id: self._remove_pairing(pid)
         )
         button_layout.addWidget(remove_pairing_btn)
 
-        toggle_btn = self._create_toggle_button(assignment, pairing.id)
+        toggle_btn = self._create_toggle_button(data.is_excluded, pairing_id)
         button_layout.addWidget(toggle_btn)
 
         layout.addLayout(button_layout)
 
-    def _create_toggle_button(self, assignment, pairing_id) -> QPushButton:
+    def _create_toggle_button(self, is_excluded: bool, pairing_id: int) -> QPushButton:
         """Create exclude/include toggle button."""
-        is_excluded = assignment and assignment.is_excluded
         text = "Include" if is_excluded else "Exclude"
 
         toggle_btn = QPushButton(text)
@@ -580,6 +565,19 @@ class MainWindow(QMainWindow):
     @_manual_entry_presenter.setter
     def _manual_entry_presenter(self, value: ManualEntryPresenter):
         self._manual_entry_presenter_instance = value
+
+    @property
+    def _round_view_presenter(self) -> RoundViewPresenter:
+        """Lazily create round view presenter."""
+        if not hasattr(self, "_round_view_presenter_instance"):
+            self._round_view_presenter_instance = RoundViewPresenter(
+                self.session, self.tournament_id
+            )
+        return self._round_view_presenter_instance
+
+    @_round_view_presenter.setter
+    def _round_view_presenter(self, value: RoundViewPresenter):
+        self._round_view_presenter_instance = value
 
     def _on_rounds_fetched(self, count: int) -> None:
         """Callback when scraper imports rounds."""

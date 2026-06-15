@@ -127,3 +127,27 @@ def create_status_text(assignment) -> str:
         return f"Digital Board: {assignment.digital_board_label}"
 
     return "Not assigned"
+
+
+def create_card_style_from_data(card_data) -> str:
+    """Determine card style from a PairingCardData object."""
+    if card_data.is_excluded:
+        return CARD_STYLE + MANUALLY_EXCLUDED
+
+    if card_data.digital_label:
+        return CARD_STYLE + (
+            MANUALLY_ASSIGNED if card_data.is_manual else DIGITAL_ASSIGNED
+        )
+
+    return CARD_STYLE + NOT_ASSIGNED
+
+
+def create_status_text_from_data(card_data) -> str:
+    """Create status text from a PairingCardData object."""
+    if card_data.is_excluded:
+        return "EXCLUDED from digital boards"
+
+    if card_data.digital_label:
+        return f"Digital Board: {card_data.digital_label}"
+
+    return "Not assigned"
