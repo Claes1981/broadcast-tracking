@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -9,8 +9,11 @@ from database.queries import (
     get_participant_by_name,
     get_all_rounds,
     get_round,
+    get_round_by_id,
+    get_round_tournament_id,
     get_max_round,
     get_round_pairings,
+    get_digital_assignment,
     get_pairing_by_id,
 )
 from logic.pairing import PairingData, RoundData
@@ -48,7 +51,7 @@ def create_round_from_data(
         round_obj = Round(
             tournament_id=tournament_id,
             round_number=round_data.round_number,
-            fetched_at=datetime.utcnow(),
+            fetched_at=datetime.now(timezone.utc),
         )
         session.add(round_obj)
         session.commit()
@@ -109,19 +112,13 @@ def get_tournament_stats(session: Session, tournament_id: int) -> dict:
 
 def delete_round(session: Session, round_id: int) -> bool:
     """Delete a round and all its pairings and assignments."""
-    from database.models import DigitalAssignment
-
-    round_obj = session.query(Round).filter(Round.id == round_id).first()
+    round_obj = get_round_by_id(session, round_id)
     if not round_obj:
         return False
 
     pairings = get_round_pairings(session, round_id)
     for pairing in pairings:
-        assignment = (
-            session.query(DigitalAssignment)
-            .filter(DigitalAssignment.pairing_id == pairing.id)
-            .first()
-        )
+        assignment = get_digital_assignment(session, pairing.id)
         if assignment:
             session.delete(assignment)
         session.delete(pairing)
@@ -133,17 +130,11 @@ def delete_round(session: Session, round_id: int) -> bool:
 
 def remove_pairing(session: Session, pairing_id: int) -> bool:
     """Remove a pairing from a round."""
-    from database.models import DigitalAssignment
-
-    pairing = session.query(Pairing).filter(Pairing.id == pairing_id).first()
+    pairing = get_pairing_by_id(session, pairing_id)
     if not pairing:
         return False
 
-    assignment = (
-        session.query(DigitalAssignment)
-        .filter(DigitalAssignment.pairing_id == pairing_id)
-        .first()
-    )
+    assignment = get_digital_assignment(session, pairing_id)
     if assignment:
         session.delete(assignment)
     session.delete(pairing)
@@ -164,11 +155,7 @@ def edit_pairing(
     if not pairing:
         return False
 
-    tournament_id = (
-        session.query(Round.tournament_id)
-        .filter(Round.id == pairing.round_id)
-        .scalar()
-    )
+    tournament_id = get_round_tournament_id(session, pairing.round_id)
     tournament = get_tournament(session, tournament_id)
     participant_type = tournament.tournament_type if tournament else "player"
 

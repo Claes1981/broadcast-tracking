@@ -3,7 +3,12 @@ from typing import List, Tuple, Optional
 from sqlalchemy.orm import Session
 
 from database.models import Pairing, DigitalAssignment
-from database.queries import get_pairing_digital_sum, get_round_pairings
+from database.queries import (
+    get_digital_assignment,
+    get_digital_assignment_by_id,
+    get_pairing_digital_sum,
+    get_round_pairings,
+)
 
 
 def generate_digital_board_labels(num_boards: int, prefix: str = "Board") -> List[str]:
@@ -89,6 +94,7 @@ def _allocate_all_pairings(
 
         if existing:
             session.delete(existing)
+            session.flush()
 
         label = digital_labels[i] if i < len(digital_labels) else None
         assignment = _create_assignment(pairing.id, label, False, False)
@@ -131,6 +137,7 @@ def _assign_digital_boards(
 ) -> List[Tuple[Pairing, str]]:
     """Assign digital boards to selected pairings."""
     _clear_non_manual_assignments(session, selected_pairings)
+    session.flush()
 
     result = []
     for i, (pairing, _) in enumerate(selected_pairings):
@@ -154,11 +161,7 @@ def _get_existing_assignment(
     session: Session, pairing_id: int
 ) -> Optional[DigitalAssignment]:
     """Get existing digital assignment for a pairing."""
-    return (
-        session.query(DigitalAssignment)
-        .filter(DigitalAssignment.pairing_id == pairing_id)
-        .first()
-    )
+    return get_digital_assignment(session, pairing_id)
 
 
 def _create_assignment(
@@ -186,9 +189,9 @@ def _clear_non_manual_assignments(
             assignments_to_clear.add(existing.id)
 
     for assignment_id in assignments_to_clear:
-        session.query(DigitalAssignment).filter(
-            DigitalAssignment.id == assignment_id
-        ).delete()
+        assignment = get_digital_assignment_by_id(session, assignment_id)
+        if assignment:
+            session.delete(assignment)
 
 
 def clear_round_assignments(session: Session, round_id: int) -> int:

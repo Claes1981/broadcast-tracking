@@ -108,3 +108,28 @@ def get_max_round(session: Session, tournament_id: int) -> int:
 def get_pairing_by_id(session: Session, pairing_id: int) -> Optional[Pairing]:
     """Get a pairing by its ID."""
     return session.query(Pairing).filter(Pairing.id == pairing_id).first()
+
+
+def get_round_by_id(session: Session, round_id: int) -> Optional[Round]:
+    """Get a round by its ID."""
+    return session.query(Round).filter(Round.id == round_id).first()
+
+
+def get_round_tournament_id(session: Session, round_id: int) -> Optional[int]:
+    """Get the tournament ID for a given round."""
+    return (
+        session.query(Round.tournament_id)
+        .filter(Round.id == round_id)
+        .scalar()
+    )
+
+
+def get_digital_assignment_by_id(
+    session: Session, assignment_id: int
+) -> Optional[DigitalAssignment]:
+    """Get a digital assignment by its ID."""
+    return (
+        session.query(DigitalAssignment)
+        .filter(DigitalAssignment.id == assignment_id)
+        .first()
+    )
