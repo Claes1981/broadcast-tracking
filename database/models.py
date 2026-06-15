@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
     Integer,
@@ -22,7 +22,7 @@ class Tournament(Base):
     name = Column(String, nullable=False)
     source_url = Column(String)
     tournament_type = Column(String, default="individual")  # 'individual' or 'team'
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
     db_file = Column(String, unique=True)
 
     rounds = relationship(
@@ -119,8 +119,8 @@ class DigitalAssignment(Base):
     digital_board_label = Column(String, nullable=True)  # e.g., "Board A", "Board B"
     is_manual = Column(Boolean, default=False)
     is_excluded = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    modified_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    modified_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     pairing = relationship("Pairing", back_populates="digital_assignment")
 
