@@ -10,6 +10,13 @@ class SchackSeScraper(BaseScraper):
 
     BASE_URL = "https://member.schack.se"
 
+    # Method 3: Headerless team tournament cell indices
+    HEADERLESS_MIN_CELLS = 17
+    CELL_HOME_TEAM = 4
+    CELL_SEPARATOR = 8
+    CELL_AWAY_TEAM = 12
+    CELL_RESULT = 16
+
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update(
@@ -222,16 +229,16 @@ class SchackSeScraper(BaseScraper):
                 # Only process the first row of each match table (team header row)
                 row = rows[0]
                 cells = row.find_all("td")
-                if len(cells) < 17:
+                if len(cells) < self.HEADERLESS_MIN_CELLS:
                     continue
 
-                separator = cells[8].get_text(strip=True)
+                separator = cells[self.CELL_SEPARATOR].get_text(strip=True)
                 if separator != "-":
                     continue
 
-                team1 = cells[4].get_text(strip=True)
-                team2 = cells[12].get_text(strip=True)
-                result_text = cells[16].get_text(strip=True)
+                team1 = cells[self.CELL_HOME_TEAM].get_text(strip=True)
+                team2 = cells[self.CELL_AWAY_TEAM].get_text(strip=True)
+                result_text = cells[self.CELL_RESULT].get_text(strip=True)
 
                 if not team1 or not team2:
                     continue
@@ -266,17 +273,3 @@ class SchackSeScraper(BaseScraper):
                 pass
 
         return None, None
-
-    def fetch_all_rounds(self, url: str) -> tuple[str, list[int]]:
-        """
-        Fetch tournament name and all available round numbers.
-        """
-        html = self.fetch_tournament_url(url)
-        name = self.parse_tournament_name(html)
-        rounds = self.parse_rounds(html)
-        return name, rounds
-
-    def fetch_round_pairings(self, base_url: str, round_number: int) -> list[dict]:
-        """Fetch and parse pairings for a specific round."""
-        html = self.fetch_round_url(base_url, round_number)
-        return self.parse_round_pairings(html, round_number)
