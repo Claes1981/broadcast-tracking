@@ -14,15 +14,11 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QAbstractItemView,
     QMessageBox,
-    QMenu,
-    QMenuBar,
     QFileDialog,
     QScrollArea,
-    QInputDialog,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
-from typing import Optional
 
 from config import (
     WINDOW_MIN_WIDTH,
@@ -31,21 +27,11 @@ from config import (
     RIGHT_PANEL_WIDTH,
 )
 from database import (
-    get_digital_assignment,
     get_pairing_by_id,
     open_tournament,
     get_tournament,
 )
-from database.models import Pairing
-from logic import (
-    allocate_digital_boards,
-    clear_round_assignments,
-    manually_assign_digital_board,
-    exclude_from_digital,
-    generate_digital_board_labels,
-    remove_pairing,
-    edit_pairing,
-)
+from logic import remove_pairing, edit_pairing
 from gui.styles import (
     BUTTON_PRIMARY_STYLE,
     BUTTON_SECONDARY_STYLE,
@@ -61,7 +47,12 @@ from gui.dialogs import (
     EditPairingDialog,
 )
 from utils.export import export_to_csv, export_to_json
-from gui.presenters import ScraperPresenter, ManualEntryPresenter, RoundViewPresenter
+from gui.presenters import (
+    ScraperPresenter,
+    ManualEntryPresenter,
+    RoundViewPresenter,
+    AllocationPresenter,
+)
 from gui.presenters.round_view_presenter import PairingCardData
 
 
@@ -431,56 +422,21 @@ class MainWindow(QMainWindow):
 
         num_boards = self._boards_spin.value()
         self.num_digital_boards = num_boards
-
-        try:
-            allocate_digital_boards(self.session, self.current_round.id, num_boards)
-            self._refresh_current_view()
-            QMessageBox.information(
-                self, "Success", f"Allocated {num_boards} digital boards"
-            )
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to allocate: {e}")
+        self._allocation_presenter.num_digital_boards = num_boards
+        self._allocation_presenter.allocate_round(self.current_round.id, self)
 
     def _clear_assignments(self):
         if not self.current_round:
             QMessageBox.warning(self, "Warning", "Please select a round first")
             return
 
-        reply = QMessageBox.question(
-            self,
-            "Confirm",
-            "Clear all digital board assignments for this round?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                count = clear_round_assignments(self.session, self.current_round.id)
-                self._refresh_current_view()
-                QMessageBox.information(self, "Success", f"Cleared {count} assignments")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to clear: {e}")
+        self._allocation_presenter.clear_round(self.current_round.id, self)
 
     def _manual_assign(self, pairing_id: int):
-        labels = generate_digital_board_labels(self.num_digital_boards)
-
-        selected, ok = QInputDialog.getItem(
-            self, "Assign Digital Board", "Choose a digital board:", labels, 0, False
-        )
-
-        if ok:
-            try:
-                manually_assign_digital_board(self.session, pairing_id, selected)
-                self._refresh_current_view()
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to assign: {e}")
+        self._allocation_presenter.manual_assign(pairing_id, self)
 
     def _remove_assignment(self, pairing_id: int):
-        try:
-            manually_assign_digital_board(self.session, pairing_id, None)
-            self._refresh_current_view()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to remove: {e}")
+        self._allocation_presenter.remove_assignment(pairing_id, self)
 
     def _edit_pairing(self, pairing_id: int):
         pairing = get_pairing_by_id(self.session, pairing_id)
@@ -521,14 +477,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", f"Failed to remove pairing: {e}")
 
     def _toggle_exclude(self, pairing_id: int):
-        assignment = get_digital_assignment(self.session, pairing_id)
-        excluded = not (assignment and assignment.is_excluded)
-
-        try:
-            exclude_from_digital(self.session, pairing_id, excluded)
-            self._refresh_current_view()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to toggle: {e}")
+        self._allocation_presenter.toggle_exclude(pairing_id, self)
 
     def _previous_round(self):
         idx = self._round_combo.currentIndex() - 1
@@ -578,6 +527,32 @@ class MainWindow(QMainWindow):
     @_round_view_presenter.setter
     def _round_view_presenter(self, value: RoundViewPresenter):
         self._round_view_presenter_instance = value
+
+    @property
+    def _allocation_presenter(self) -> AllocationPresenter:
+        """Lazily create allocation presenter."""
+        if not hasattr(self, "_allocation_presenter_instance"):
+            self._allocation_presenter_instance = AllocationPresenter(
+                self.session,
+                self.tournament_id,
+                self.num_digital_boards,
+                self._on_allocated,
+                self._on_cleared,
+                self._refresh_current_view,
+            )
+        return self._allocation_presenter_instance
+
+    @_allocation_presenter.setter
+    def _allocation_presenter(self, value: AllocationPresenter):
+        self._allocation_presenter_instance = value
+
+    def _on_allocated(self, count: int) -> None:
+        """Callback when boards are allocated."""
+        self._refresh_current_view()
+
+    def _on_cleared(self, count: int) -> None:
+        """Callback when assignments are cleared."""
+        self._refresh_current_view()
 
     def _on_rounds_fetched(self, count: int) -> None:
         """Callback when scraper imports rounds."""
