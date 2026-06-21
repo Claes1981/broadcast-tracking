@@ -108,3 +108,5 @@ logs/
 # Virtual environment (if in project root)
 env/
 venv/
+# Local Pi runtime state
+.atl/
