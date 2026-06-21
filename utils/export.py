@@ -3,8 +3,13 @@ import json
 from pathlib import Path
 from sqlalchemy.orm import Session
 
-from database.models import Round, Pairing, DigitalAssignment, Tournament
-from database.queries import get_tournament, get_all_rounds, get_all_participants
+from database.models import Round, Tournament
+from database.queries import (
+    get_tournament,
+    get_all_rounds,
+    get_all_participants,
+    count_digital_rounds_for_participant,
+)
 
 
 def _prepare_export(
@@ -164,8 +169,6 @@ def export_statistics(session: Session, tournament_id: int, output_path: str) ->
         session, tournament_id, output_path
     )
     participants = get_all_participants(session, tournament_id)
-
-    from database.queries import count_digital_rounds_for_participant
 
     stats = []
     for participant in participants:

@@ -10,16 +10,9 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QFileDialog,
     QSpinBox,
-    QListWidget,
-    QListWidgetItem,
-    QWidget,
     QTableWidget,
     QTableWidgetItem,
 )
-from PyQt6.QtCore import Qt
-from typing import Optional
-
-from logic.pairing import PairingData
 
 
 def _create_button_layout(

@@ -1,5 +1,4 @@
 import random
-from typing import List, Tuple, Optional
 from sqlalchemy.orm import Session
 
 from database.models import Pairing, DigitalAssignment
@@ -11,7 +10,7 @@ from database.queries import (
 )
 
 
-def generate_digital_board_labels(num_boards: int, prefix: str = "Board") -> List[str]:
+def generate_digital_board_labels(num_boards: int, prefix: str = "Board") -> list[str]:
     """Generate labels like 'Board A', 'Board B', 'Board C'..."""
     if num_boards <= 0:
         return []
@@ -33,7 +32,7 @@ def _validate_allocation_params(num_boards: int, prefix: str) -> None:
 
 def allocate_digital_boards(
     session: Session, round_id: int, num_digital_boards: int, prefix: str = "Board"
-) -> List[Tuple[Pairing, str]]:
+) -> list[tuple[Pairing, str]]:
     """
     Allocate digital boards for a round.
 
@@ -69,8 +68,8 @@ def allocate_digital_boards(
 
 
 def _calculate_pairing_digital_sums(
-    session: Session, pairings: List[Pairing]
-) -> List[Tuple[Pairing, int]]:
+    session: Session, pairings: list[Pairing]
+) -> list[tuple[Pairing, int]]:
     """Calculate digital round sums for all pairings."""
     pairing_sums = []
     for pairing in pairings:
@@ -80,8 +79,10 @@ def _calculate_pairing_digital_sums(
 
 
 def _allocate_all_pairings(
-    session: Session, pairing_sums: List[Tuple[Pairing, int]], digital_labels: List[str]
-) -> List[Tuple[Pairing, str]]:
+    session: Session,
+    pairing_sums: list[tuple[Pairing, int]],
+    digital_labels: list[str],
+) -> list[tuple[Pairing, str]]:
     """Allocate digital boards to all pairings when boards >= pairings."""
     result = []
     for i, (pairing, _) in enumerate(pairing_sums):
@@ -108,8 +109,8 @@ def _allocate_all_pairings(
 
 
 def _select_pairings_with_tiebreaking(
-    pairing_sums: List[Tuple[Pairing, int]], num_digital_boards: int
-) -> List[Tuple[Pairing, int]]:
+    pairing_sums: list[tuple[Pairing, int]], num_digital_boards: int
+) -> list[tuple[Pairing, int]]:
     """Select pairings for allocation with random tiebreaking."""
     cutoff_index = num_digital_boards - 1
     cutoff_sum = pairing_sums[cutoff_index][1]
@@ -132,9 +133,9 @@ def _select_pairings_with_tiebreaking(
 
 def _assign_digital_boards(
     session: Session,
-    selected_pairings: List[Tuple[Pairing, int]],
-    digital_labels: List[str],
-) -> List[Tuple[Pairing, str]]:
+    selected_pairings: list[tuple[Pairing, int]],
+    digital_labels: list[str],
+) -> list[tuple[Pairing, str]]:
     """Assign digital boards to selected pairings."""
     _clear_non_manual_assignments(session, selected_pairings)
     session.flush()
@@ -159,13 +160,13 @@ def _assign_digital_boards(
 
 def _get_existing_assignment(
     session: Session, pairing_id: int
-) -> Optional[DigitalAssignment]:
+) -> DigitalAssignment | None:
     """Get existing digital assignment for a pairing."""
     return get_digital_assignment(session, pairing_id)
 
 
 def _create_assignment(
-    pairing_id: int, label: Optional[str], is_manual: bool, is_excluded: bool
+    pairing_id: int, label: str | None, is_manual: bool, is_excluded: bool
 ) -> DigitalAssignment:
     """Create a new digital assignment."""
     return DigitalAssignment(
@@ -177,7 +178,7 @@ def _create_assignment(
 
 
 def _clear_non_manual_assignments(
-    session: Session, selected_pairings: List[Tuple[Pairing, int]]
+    session: Session, selected_pairings: list[tuple[Pairing, int]]
 ):
     """Clear non-manual assignments for selected pairings."""
     assignments_to_clear = set()
@@ -213,7 +214,7 @@ def clear_round_assignments(session: Session, round_id: int) -> int:
 
 
 def manually_assign_digital_board(
-    session: Session, pairing_id: int, digital_board_label: Optional[str]
+    session: Session, pairing_id: int, digital_board_label: str | None
 ) -> DigitalAssignment:
     """
     Manually assign or remove a digital board for a pairing.
@@ -232,7 +233,7 @@ def manually_assign_digital_board(
 
 
 def _update_assignment_to_manual(
-    assignment: DigitalAssignment, digital_board_label: Optional[str]
+    assignment: DigitalAssignment, digital_board_label: str | None
 ):
     """Update an existing assignment to manual mode."""
     assignment.digital_board_label = digital_board_label

@@ -1,5 +1,3 @@
-from typing import Optional
-
 from sqlalchemy.orm import Session
 
 from database import (
@@ -35,7 +33,7 @@ class PairingCardData:
         pairing: Pairing,
         p1_name: str,
         p2_name: str,
-        digital_label: Optional[str],
+        digital_label: str | None,
         is_manual: bool,
         is_excluded: bool,
         has_assignment: bool,
@@ -67,7 +65,7 @@ class RoundViewPresenter:
         rounds = get_all_rounds(self.session, self.tournament_id)
         return [f"Round {r.round_number}" for r in rounds]
 
-    def get_round_by_label(self, label: str) -> Optional[Round]:
+    def get_round_by_label(self, label: str) -> Round | None:
         """Get a Round object by its combo box label."""
         if not label:
             return None

@@ -1,4 +1,3 @@
-from typing import Optional
 from bs4 import BeautifulSoup
 import requests
 import re
@@ -45,7 +44,7 @@ class SchackSeScraper(BaseScraper):
 
         return "Unknown Tournament"
 
-    def extract_tournament_id(self, url: str) -> Optional[str]:
+    def extract_tournament_id(self, url: str) -> str | None:
         """Extract tournament ID from URL."""
         match = re.search(r"id=(\d+)", url)
         if match:
@@ -259,7 +258,7 @@ class SchackSeScraper(BaseScraper):
 
     def _parse_result(
         self, result_text: str
-    ) -> tuple[Optional[float], Optional[float]]:
+    ) -> tuple[float | None, float | None]:
         """Parse a result string like '3 - 1' or '3½ - ½' into scores."""
         result_text = result_text.replace(" ", "").replace("½", ".5")
 

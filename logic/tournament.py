@@ -1,8 +1,7 @@
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
-from database.models import Tournament, Participant, Round, Pairing
+from database.models import Participant, Round, Pairing
 from database.queries import (
     get_tournament,
     get_all_participants,
@@ -16,7 +15,7 @@ from database.queries import (
     get_digital_assignment,
     get_pairing_by_id,
 )
-from logic.pairing import PairingData, RoundData
+from logic.pairing import RoundData
 
 
 def ensure_participant_exists(
@@ -81,9 +80,9 @@ def create_round_from_data(
 def import_rounds_from_data(
     session: Session,
     tournament_id: int,
-    rounds: List[RoundData],
+    rounds: list[RoundData],
     participant_type: str = "player",
-) -> List[Round]:
+) -> list[Round]:
     """Import multiple rounds from RoundData."""
     created_rounds = []
     for round_data in rounds:
@@ -149,8 +148,6 @@ def edit_pairing(
     new_participant2_name: str,
 ) -> bool:
     """Edit the participants of an existing pairing."""
-    from database.models import DigitalAssignment
-
     pairing = get_pairing_by_id(session, pairing_id)
     if not pairing:
         return False

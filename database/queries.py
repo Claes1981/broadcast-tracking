@@ -1,4 +1,3 @@
-from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database.models import Tournament, Participant, Round, Pairing, DigitalAssignment
@@ -105,17 +104,17 @@ def get_max_round(session: Session, tournament_id: int) -> int:
     return max(r.round_number for r in rounds)
 
 
-def get_pairing_by_id(session: Session, pairing_id: int) -> Optional[Pairing]:
+def get_pairing_by_id(session: Session, pairing_id: int) -> Pairing | None:
     """Get a pairing by its ID."""
     return session.query(Pairing).filter(Pairing.id == pairing_id).first()
 
 
-def get_round_by_id(session: Session, round_id: int) -> Optional[Round]:
+def get_round_by_id(session: Session, round_id: int) -> Round | None:
     """Get a round by its ID."""
     return session.query(Round).filter(Round.id == round_id).first()
 
 
-def get_round_tournament_id(session: Session, round_id: int) -> Optional[int]:
+def get_round_tournament_id(session: Session, round_id: int) -> int | None:
     """Get the tournament ID for a given round."""
     return (
         session.query(Round.tournament_id)
@@ -126,10 +125,15 @@ def get_round_tournament_id(session: Session, round_id: int) -> Optional[int]:
 
 def get_digital_assignment_by_id(
     session: Session, assignment_id: int
-) -> Optional[DigitalAssignment]:
+) -> DigitalAssignment | None:
     """Get a digital assignment by its ID."""
     return (
         session.query(DigitalAssignment)
         .filter(DigitalAssignment.id == assignment_id)
         .first()
     )
+
+
+def get_first_tournament(session: Session) -> Tournament | None:
+    """Get the first tournament in the database."""
+    return session.query(Tournament).first()
