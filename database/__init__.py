@@ -30,4 +30,5 @@ from database.queries import (
     get_pairing_digital_sum,
     get_round_numbers,
     get_max_round,
+    get_first_tournament,
 )

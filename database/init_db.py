@@ -1,11 +1,11 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.exc import IntegrityError
 import os
 import re
 
 from config import DATA_DIR
 from database.models import Base, Tournament
+from database.queries import get_first_tournament
 
 
 def get_database_path(tournament_name: str) -> str:
@@ -46,7 +46,7 @@ def get_session(db_path: str) -> Session:
 
 
 def create_tournament(
-    name: str, source_url: str = None, tournament_type: str = "individual"
+    name: str, source_url: str | None = None, tournament_type: str = "individual"
 ) -> tuple[str, int]:
     """
     Create a new tournament and return (db_path, tournament_id).
@@ -78,7 +78,7 @@ def open_tournament(db_path: str) -> tuple[Session, int]:
     """
     session = get_session(db_path)
     try:
-        tournament = session.query(Tournament).first()
+        tournament = get_first_tournament(session)
         if not tournament:
             raise ValueError("No tournament found in database")
         return session, tournament.id
