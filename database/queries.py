@@ -3,7 +3,7 @@ from sqlalchemy import func
 from database.models import Tournament, Participant, Round, Pairing, DigitalAssignment
 
 
-def get_tournament(session: Session, tournament_id: int) -> Tournament:
+def get_tournament(session: Session, tournament_id: int) -> Tournament | None:
     return session.query(Tournament).filter(Tournament.id == tournament_id).first()
 
 
@@ -17,7 +17,7 @@ def get_all_participants(session: Session, tournament_id: int) -> list[Participa
 
 def get_participant_by_name(
     session: Session, tournament_id: int, name: str
-) -> Participant:
+) -> Participant | None:
     return (
         session.query(Participant)
         .filter(Participant.tournament_id == tournament_id, Participant.name == name)
@@ -34,7 +34,7 @@ def get_all_rounds(session: Session, tournament_id: int) -> list[Round]:
     )
 
 
-def get_round(session: Session, tournament_id: int, round_number: int) -> Round:
+def get_round(session: Session, tournament_id: int, round_number: int) -> Round | None:
     return (
         session.query(Round)
         .filter(
@@ -48,7 +48,9 @@ def get_round_pairings(session: Session, round_id: int) -> list[Pairing]:
     return session.query(Pairing).filter(Pairing.round_id == round_id).all()
 
 
-def get_digital_assignment(session: Session, pairing_id: int) -> DigitalAssignment:
+def get_digital_assignment(
+    session: Session, pairing_id: int
+) -> DigitalAssignment | None:
     return (
         session.query(DigitalAssignment)
         .filter(DigitalAssignment.pairing_id == pairing_id)
@@ -116,11 +118,7 @@ def get_round_by_id(session: Session, round_id: int) -> Round | None:
 
 def get_round_tournament_id(session: Session, round_id: int) -> int | None:
     """Get the tournament ID for a given round."""
-    return (
-        session.query(Round.tournament_id)
-        .filter(Round.id == round_id)
-        .scalar()
-    )
+    return session.query(Round.tournament_id).filter(Round.id == round_id).scalar()
 
 
 def get_digital_assignment_by_id(
