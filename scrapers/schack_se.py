@@ -159,17 +159,7 @@ class SchackSeScraper(BaseScraper):
                     if team2.startswith("E") and team2[1:].isdigit():
                         continue
 
-                    score1, score2 = self._parse_result(result_text)
-
-                    pairings.append(
-                        {
-                            "participant1": team1,
-                            "participant2": team2,
-                            "board_number": None,
-                            "score1": score1,
-                            "score2": score2,
-                        }
-                    )
+                    pairings.append(self._build_pairing_dict(team1, team2, result_text))
 
         # Method 2: Team tournament format (HEMMALAG vs BORTALAG headers)
         if not pairings:
@@ -205,17 +195,7 @@ class SchackSeScraper(BaseScraper):
                     if not team1 or not team2:
                         continue
 
-                    score1, score2 = self._parse_result(result_text)
-
-                    pairings.append(
-                        {
-                            "participant1": team1,
-                            "participant2": team2,
-                            "board_number": None,
-                            "score1": score1,
-                            "score2": score2,
-                        }
-                    )
+                    pairings.append(self._build_pairing_dict(team1, team2, result_text))
 
         # Method 3: Headerless team tournament (nested tables, fixed cell positions)
         # Structure: C4=home team, C6=home Elo, C8="-", C12=away team, C14=away Elo, C16=result
@@ -242,23 +222,27 @@ class SchackSeScraper(BaseScraper):
                 if not team1 or not team2:
                     continue
 
-                score1, score2 = self._parse_result(result_text)
-
-                pairings.append(
-                    {
-                        "participant1": team1,
-                        "participant2": team2,
-                        "board_number": None,
-                        "score1": score1,
-                        "score2": score2,
-                    }
-                )
+                pairings.append(self._build_pairing_dict(team1, team2, result_text))
 
         return pairings
 
-    def _parse_result(
-        self, result_text: str
-    ) -> tuple[float | None, float | None]:
+    def _build_pairing_dict(
+        self,
+        team1: str,
+        team2: str,
+        result_text: str,
+    ) -> dict:
+        """Build a pairing dict from team names and result text."""
+        score1, score2 = self._parse_result(result_text)
+        return {
+            "participant1": team1,
+            "participant2": team2,
+            "board_number": None,
+            "score1": score1,
+            "score2": score2,
+        }
+
+    def _parse_result(self, result_text: str) -> tuple[float | None, float | None]:
         """Parse a result string like '3 - 1' or '3½ - ½' into scores."""
         result_text = result_text.replace(" ", "").replace("½", ".5")
 
