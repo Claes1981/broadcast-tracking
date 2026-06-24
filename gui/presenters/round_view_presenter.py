@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from sqlalchemy.orm import Session
 
 from database import (
@@ -11,46 +13,29 @@ from database import (
 from database.models import Round, Pairing
 
 
+@dataclass
 class ParticipantRow:
     """Data class for a participant row in the participants table."""
 
-    def __init__(
-        self,
-        rank: int,
-        name: str,
-        digital_count: int,
-    ):
-        self.rank = rank
-        self.name = name
-        self.digital_count = digital_count
+    rank: int
+    name: str
+    digital_count: int
 
 
+@dataclass
 class PairingCardData:
     """Data class for a pairing card."""
 
-    def __init__(
-        self,
-        pairing: Pairing,
-        p1_name: str,
-        p2_name: str,
-        digital_label: str | None,
-        is_manual: bool,
-        is_excluded: bool,
-        has_assignment: bool,
-        p1_count: int,
-        p2_count: int,
-        combined_count: int,
-    ):
-        self.pairing = pairing
-        self.p1_name = p1_name
-        self.p2_name = p2_name
-        self.digital_label = digital_label
-        self.is_manual = is_manual
-        self.is_excluded = is_excluded
-        self.has_assignment = has_assignment
-        self.p1_count = p1_count
-        self.p2_count = p2_count
-        self.combined_count = combined_count
+    pairing: Pairing
+    p1_name: str
+    p2_name: str
+    digital_label: str | None
+    is_manual: bool
+    is_excluded: bool
+    has_assignment: bool
+    p1_count: int
+    p2_count: int
+    combined_count: int
 
 
 class RoundViewPresenter:
@@ -78,9 +63,7 @@ class RoundViewPresenter:
         rows = []
 
         for p in participants:
-            digital_count = count_digital_rounds_for_participant(
-                self.session, p.id
-            )
+            digital_count = count_digital_rounds_for_participant(self.session, p.id)
             rows.append(
                 ParticipantRow(rank=0, name=p.name, digital_count=digital_count)
             )

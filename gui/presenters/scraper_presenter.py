@@ -1,5 +1,6 @@
 """Scraper presenter - handles tournament scraping and import logic."""
-from typing import Callable
+
+from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
@@ -26,9 +27,7 @@ class ScraperPresenter:
         self.tournament_id = tournament_id
         self.on_rounds_fetched = on_rounds_fetched
 
-    def determine_rounds_to_fetch(
-        self, available_rounds: list[int]
-    ) -> list[int]:
+    def determine_rounds_to_fetch(self, available_rounds: list[int]) -> list[int]:
         """Return rounds that don't exist in the database yet.
 
         If all rounds exist, asks user for overwrite confirmation.
@@ -100,9 +99,8 @@ class ScraperPresenter:
         if not rounds_to_fetch:
             return 0  # Cancelled by user
 
-        tournament_type = get_tournament(
-            self.session, self.tournament_id
-        ).tournament_type
+        tournament = get_tournament(self.session, self.tournament_id)
+        tournament_type = tournament.tournament_type if tournament else "individual"
 
         for round_num in rounds_to_fetch:
             self.import_single_round(scraper, url, round_num, tournament_type)

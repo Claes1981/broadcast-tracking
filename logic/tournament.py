@@ -96,6 +96,8 @@ def import_rounds_from_data(
 def get_tournament_stats(session: Session, tournament_id: int) -> dict:
     """Get statistics for a tournament."""
     tournament = get_tournament(session, tournament_id)
+    if not tournament:
+        return {}
     participants = get_all_participants(session, tournament_id)
     rounds = get_all_rounds(session, tournament_id)
 

@@ -1,5 +1,6 @@
 """Manual entry presenter - handles manual round entry logic."""
-from typing import Callable
+
+from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
@@ -34,15 +35,12 @@ class ManualEntryPresenter:
         participants = get_all_participants(self.session, self.tournament_id)
         return [p.name for p in participants]
 
-    def import_manual_round(
-        self, round_num: int, pairings_dict: list[dict]
-    ) -> None:
+    def import_manual_round(self, round_num: int, pairings_dict: list[dict]) -> None:
         """Import a manually entered round into the database."""
         pairings = self._create_pairing_data(pairings_dict)
         round_data = RoundData(round_number=round_num, pairings=pairings)
-        tournament_type = get_tournament(
-            self.session, self.tournament_id
-        ).tournament_type
+        tournament = get_tournament(self.session, self.tournament_id)
+        tournament_type = tournament.tournament_type if tournament else "individual"
 
         import_rounds_from_data(
             self.session, self.tournament_id, [round_data], tournament_type
