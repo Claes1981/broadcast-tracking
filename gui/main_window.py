@@ -1,59 +1,56 @@
-from PyQt6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QSplitter,
-    QLabel,
-    QPushButton,
-    QComboBox,
-    QSpinBox,
-    QTableWidget,
-    QTableWidgetItem,
-    QHeaderView,
-    QGroupBox,
-    QAbstractItemView,
-    QMessageBox,
-    QFileDialog,
-    QScrollArea,
-)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QComboBox,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from config import (
-    WINDOW_MIN_WIDTH,
-    WINDOW_MIN_HEIGHT,
     LEFT_PANEL_WIDTH,
     RIGHT_PANEL_WIDTH,
+    WINDOW_MIN_HEIGHT,
+    WINDOW_MIN_WIDTH,
 )
 from database import (
-    get_pairing_by_id,
-    open_tournament,
     get_tournament,
+    open_tournament,
 )
-from logic import remove_pairing, edit_pairing
+from gui.dialogs import (
+    ExportDialog,
+    FetchPairingsDialog,
+    ManualRoundDialog,
+    NewTournamentDialog,
+    SettingsDialog,
+)
+from gui.presenters import (
+    AllocationPresenter,
+    ManualEntryPresenter,
+    RoundViewPresenter,
+    ScraperPresenter,
+)
+from gui.presenters.round_view_presenter import PairingCardData
 from gui.styles import (
     BUTTON_PRIMARY_STYLE,
     BUTTON_SECONDARY_STYLE,
     create_card_style_from_data,
     create_status_text_from_data,
 )
-from gui.dialogs import (
-    NewTournamentDialog,
-    FetchPairingsDialog,
-    SettingsDialog,
-    ExportDialog,
-    ManualRoundDialog,
-    EditPairingDialog,
-)
-from utils.export import export_to_csv, export_to_json
-from gui.presenters import (
-    ScraperPresenter,
-    ManualEntryPresenter,
-    RoundViewPresenter,
-    AllocationPresenter,
-)
-from gui.presenters.round_view_presenter import PairingCardData
+from utils.export import export
 
 
 class MainWindow(QMainWindow):
