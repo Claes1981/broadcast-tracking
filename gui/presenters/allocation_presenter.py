@@ -1,16 +1,20 @@
 """Allocation presenter - handles digital board allocation logic."""
-from typing import Callable
 
-from PyQt6.QtWidgets import QMessageBox, QInputDialog
+from collections.abc import Callable
+
+from PyQt6.QtWidgets import QInputDialog, QMessageBox, QWidget
 from sqlalchemy.orm import Session
 
-from database import get_digital_assignment
+from database import get_digital_assignment, get_pairing_by_id
+from gui.dialogs import EditPairingDialog
 from logic import (
     allocate_digital_boards,
     clear_round_assignments,
+    edit_pairing,
     exclude_from_digital,
     generate_digital_board_labels,
     manually_assign_digital_board,
+    remove_pairing,
 )
 
 
@@ -36,7 +40,7 @@ class AllocationPresenter:
         self.on_cleared = on_cleared
         self.on_assignment_changed = on_assignment_changed
 
-    def allocate_round(self, round_id: int, parent_widget) -> None:
+    def allocate_round(self, round_id: int, parent_widget: QWidget) -> None:
         """Allocate digital boards for a round.
 
         Returns the number of boards allocated, or 0 if cancelled.
@@ -55,7 +59,7 @@ class AllocationPresenter:
         except Exception as e:
             QMessageBox.critical(parent_widget, "Error", f"Failed to allocate: {e}")
 
-    def clear_round(self, round_id: int, parent_widget) -> int:
+    def clear_round(self, round_id: int, parent_widget: QWidget) -> int:
         """Clear all digital board assignments for a round.
 
         Returns the number of assignments cleared, or 0 if cancelled.
@@ -82,7 +86,7 @@ class AllocationPresenter:
             QMessageBox.critical(parent_widget, "Error", f"Failed to clear: {e}")
             return 0
 
-    def manual_assign(self, pairing_id: int, parent_widget) -> None:
+    def manual_assign(self, pairing_id: int, parent_widget: QWidget) -> None:
         """Manually assign a digital board to a pairing."""
         labels = generate_digital_board_labels(self.num_digital_boards)
 
@@ -100,21 +104,17 @@ class AllocationPresenter:
                 manually_assign_digital_board(self.session, pairing_id, selected)
                 self.on_assignment_changed()
             except Exception as e:
-                QMessageBox.critical(
-                    parent_widget, "Error", f"Failed to assign: {e}"
-                )
+                QMessageBox.critical(parent_widget, "Error", f"Failed to assign: {e}")
 
-    def remove_assignment(self, pairing_id: int, parent_widget) -> None:
+    def remove_assignment(self, pairing_id: int, parent_widget: QWidget) -> None:
         """Remove digital board assignment from a pairing."""
         try:
             manually_assign_digital_board(self.session, pairing_id, None)
             self.on_assignment_changed()
         except Exception as e:
-            QMessageBox.critical(
-                parent_widget, "Error", f"Failed to remove: {e}"
-            )
+            QMessageBox.critical(parent_widget, "Error", f"Failed to remove: {e}")
 
-    def toggle_exclude(self, pairing_id: int, parent_widget) -> None:
+    def toggle_exclude(self, pairing_id: int, parent_widget: QWidget) -> None:
         """Toggle exclude/include status for a pairing."""
         assignment = get_digital_assignment(self.session, pairing_id)
         excluded = not (assignment and assignment.is_excluded)
@@ -124,3 +124,45 @@ class AllocationPresenter:
             self.on_assignment_changed()
         except Exception as e:
             QMessageBox.critical(parent_widget, "Error", f"Failed to toggle: {e}")
+
+    def edit_pairing(self, pairing_id: int, parent_widget: QWidget) -> None:
+        """Edit participant names for a pairing."""
+        pairing = get_pairing_by_id(self.session, pairing_id)
+        if not pairing:
+            return
+
+        dialog = EditPairingDialog(
+            parent_widget,
+            pairing.participant1.name,
+            pairing.participant2.name,
+        )
+
+        if not dialog.exec():
+            return
+
+        try:
+            new_p1, new_p2 = dialog.get_data()
+            edit_pairing(self.session, pairing_id, new_p1, new_p2)
+            self.on_assignment_changed()
+            QMessageBox.information(parent_widget, "Success", "Pairing updated")
+        except Exception as e:
+            QMessageBox.critical(parent_widget, "Error", f"Failed to edit pairing: {e}")
+
+    def remove_pairing(self, pairing_id: int, parent_widget: QWidget) -> None:
+        """Remove a pairing from the current round."""
+        reply = QMessageBox.question(
+            parent_widget,
+            "Confirm",
+            "Remove this pairing?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                remove_pairing(self.session, pairing_id)
+                self.on_assignment_changed()
+                QMessageBox.information(parent_widget, "Success", "Pairing removed")
+            except Exception as e:
+                QMessageBox.critical(
+                    parent_widget, "Error", f"Failed to remove pairing: {e}"
+                )

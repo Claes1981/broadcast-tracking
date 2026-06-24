@@ -436,42 +436,10 @@ class MainWindow(QMainWindow):
         self._allocation_presenter.remove_assignment(pairing_id, self)
 
     def _edit_pairing(self, pairing_id: int):
-        pairing = get_pairing_by_id(self.session, pairing_id)
-        if not pairing:
-            return
-
-        dialog = EditPairingDialog(
-            self,
-            pairing.participant1.name,
-            pairing.participant2.name,
-        )
-
-        if not dialog.exec():
-            return
-
-        try:
-            new_p1, new_p2 = dialog.get_data()
-            edit_pairing(self.session, pairing_id, new_p1, new_p2)
-            self._refresh_current_view()
-            QMessageBox.information(self, "Success", "Pairing updated")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to edit pairing: {e}")
+        self._allocation_presenter.edit_pairing(pairing_id, self)
 
     def _remove_pairing(self, pairing_id: int):
-        reply = QMessageBox.question(
-            self,
-            "Confirm",
-            "Remove this pairing?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                remove_pairing(self.session, pairing_id)
-                self._refresh_current_view()
-                QMessageBox.information(self, "Success", "Pairing removed")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to remove pairing: {e}")
+        self._allocation_presenter.remove_pairing(pairing_id, self)
 
     def _toggle_exclude(self, pairing_id: int):
         self._allocation_presenter.toggle_exclude(pairing_id, self)
@@ -595,7 +563,9 @@ class MainWindow(QMainWindow):
 
     def _fetch_pairings(self):
         if not self.session:
-            QMessageBox.warning(self, "No tournament", "Please create or open a tournament first.")
+            QMessageBox.warning(
+                self, "No tournament", "Please create or open a tournament first."
+            )
             return
 
         tournament = get_tournament(self.session, self.tournament_id)
@@ -651,11 +621,7 @@ class MainWindow(QMainWindow):
                 return
 
             try:
-                if format_type == "CSV":
-                    export_to_csv(self.session, self.tournament_id, file_path)
-                else:
-                    export_to_json(self.session, self.tournament_id, file_path)
-
+                export(self.session, self.tournament_id, file_path, format_type)
                 QMessageBox.information(self, "Success", f"Exported to {file_path}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to export: {e}")
