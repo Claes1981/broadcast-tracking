@@ -99,36 +99,6 @@ CARD_STYLE = """
 """
 
 
-def create_card_style(assignment) -> str:
-    """Determine card style based on assignment status."""
-    if not assignment:
-        return CARD_STYLE + NOT_ASSIGNED
-
-    if assignment.is_excluded:
-        return CARD_STYLE + MANUALLY_EXCLUDED
-
-    if assignment.digital_board_label:
-        return CARD_STYLE + (
-            MANUALLY_ASSIGNED if assignment.is_manual else DIGITAL_ASSIGNED
-        )
-
-    return CARD_STYLE + NOT_ASSIGNED
-
-
-def create_status_text(assignment) -> str:
-    """Create status text based on assignment."""
-    if not assignment:
-        return "Not assigned"
-
-    if assignment.is_excluded:
-        return "EXCLUDED from digital boards"
-
-    if assignment.digital_board_label:
-        return f"Digital Board: {assignment.digital_board_label}"
-
-    return "Not assigned"
-
-
 def create_card_style_from_data(card_data) -> str:
     """Determine card style from a PairingCardData object."""
     if card_data.is_excluded:

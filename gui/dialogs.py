@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 
 def _create_button_layout(
     cancel_text: str = "Cancel", ok_text: str = "OK"
-) -> QHBoxLayout:
+) -> tuple[QHBoxLayout, QPushButton, QPushButton]:
     """Create a standard button layout with Cancel and OK buttons."""
     layout = QHBoxLayout()
     layout.addStretch()
@@ -32,7 +32,7 @@ def _create_button_layout(
     return layout, cancel_btn, ok_btn
 
 
-def _validate_non_empty(text: str, field_name: str) -> bool:
+def _validate_non_empty(text: str) -> bool:
     """Validate that a text field is not empty."""
     return len(text.strip()) > 0
 
@@ -85,7 +85,7 @@ class NewTournamentDialog(QDialog):
 
     def _on_create(self):
         """Handle create button click with validation."""
-        if not _validate_non_empty(self._name_edit.text(), "Tournament Name"):
+        if not _validate_non_empty(self._name_edit.text()):
             QMessageBox.warning(self, "Error", "Please enter a tournament name")
             return
         self.accept()
@@ -157,7 +157,7 @@ class FetchPairingsDialog(QDialog):
     def _on_fetch(self):
         """Handle fetch button click with validation."""
         url = self._url_edit.text().strip()
-        if not _validate_non_empty(url, "URL"):
+        if not _validate_non_empty(url):
             QMessageBox.warning(self, "Error", "Please enter a URL")
             return
 
@@ -267,7 +267,7 @@ class ExportDialog(QDialog):
     def _on_export(self):
         """Handle export button click with validation."""
         file_path = self._file_edit.text()
-        if not _validate_non_empty(file_path, "File path"):
+        if not _validate_non_empty(file_path):
             QMessageBox.warning(self, "Error", "Please select a file path")
             return
         self.accept()
@@ -350,10 +350,10 @@ class ManualPairingDialog(QDialog):
         p1 = self._p1_combo.currentText().strip()
         p2 = self._p2_combo.currentText().strip()
 
-        if not _validate_non_empty(p1, "Participant 1"):
+        if not _validate_non_empty(p1):
             QMessageBox.warning(self, "Error", "Please enter first participant name")
             return
-        if not _validate_non_empty(p2, "Participant 2"):
+        if not _validate_non_empty(p2):
             QMessageBox.warning(self, "Error", "Please enter second participant name")
             return
 
@@ -545,10 +545,10 @@ class EditPairingDialog(QDialog):
         p1 = self._p1_edit.text().strip()
         p2 = self._p2_edit.text().strip()
 
-        if not _validate_non_empty(p1, "Participant 1"):
+        if not _validate_non_empty(p1):
             QMessageBox.warning(self, "Error", "Please enter first participant name")
             return
-        if not _validate_non_empty(p2, "Participant 2"):
+        if not _validate_non_empty(p2):
             QMessageBox.warning(self, "Error", "Please enter second participant name")
             return
 
