@@ -21,12 +21,14 @@ from PyQt6.QtWidgets import (
 )
 
 from config import (
+    DATA_DIR,
     LEFT_PANEL_WIDTH,
     RIGHT_PANEL_WIDTH,
     WINDOW_MIN_HEIGHT,
     WINDOW_MIN_WIDTH,
 )
 from database import (
+    create_tournament,
     get_tournament,
     open_tournament,
 )
@@ -43,14 +45,34 @@ from gui.presenters import (
     RoundViewPresenter,
     ScraperPresenter,
 )
-from gui.presenters.round_view_presenter import PairingCardData
+from gui.pairing_card_builder import PairingCardBuilder
 from gui.styles import (
     BUTTON_PRIMARY_STYLE,
     BUTTON_SECONDARY_STYLE,
-    create_card_style_from_data,
-    create_status_text_from_data,
 )
 from utils.export import export
+
+
+class _PairingAdapter:
+    """Adapts MainWindow methods to PairingCallbacks protocol."""
+
+    def __init__(self, window) -> None:
+        self._window = window
+
+    def on_assign(self, pairing_id: int) -> None:
+        self._window._manual_assign(pairing_id)
+
+    def on_remove_assignment(self, pairing_id: int) -> None:
+        self._window._remove_assignment(pairing_id)
+
+    def on_edit(self, pairing_id: int) -> None:
+        self._window._edit_pairing(pairing_id)
+
+    def on_remove_pairing(self, pairing_id: int) -> None:
+        self._window._remove_pairing(pairing_id)
+
+    def on_toggle_exclude(self, pairing_id: int) -> None:
+        self._window._toggle_exclude(pairing_id)
 
 
 class MainWindow(QMainWindow):
@@ -310,102 +332,25 @@ class MainWindow(QMainWindow):
 
     def _load_pairings(self, round_obj):
         """Load pairing cards for the selected round."""
-        self._pairings_layout.addWidget(QWidget())
+        self._clear_pairings_layout()
+
+        cards = self._round_view_presenter.get_pairing_cards(round_obj)
+        builder = PairingCardBuilder()
+        for card_data in cards:
+            card = builder.build(card_data, self._pairing_callbacks)
+            self._pairings_layout.addWidget(card)
+
+    def _clear_pairings_layout(self) -> None:
+        """Clear all widgets from the pairings layout."""
         while self._pairings_layout.count() > 1:
             item = self._pairings_layout.takeAt(1)
             if item.widget():
                 item.widget().deleteLater()
 
-        cards = self._round_view_presenter.get_pairing_cards(round_obj)
-        for card_data in cards:
-            card = self._create_pairing_card(card_data)
-            self._pairings_layout.addWidget(card)
-
-    def _create_pairing_card(self, card_data: PairingCardData) -> QWidget:
-        """Create a pairing card widget from presenter data."""
-        card = QWidget()
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        self._add_pairing_title(layout, card_data)
-        self._add_pairing_status(layout, card_data)
-        self._add_pairing_stats(layout, card_data)
-        self._add_pairing_controls(layout, card_data)
-
-        card.setStyleSheet(create_card_style_from_data(card_data))
-
-        return card
-
-    def _add_pairing_title(self, layout: QVBoxLayout, data: PairingCardData):
-        """Add participant names to pairing card."""
-        title = QLabel(f"{data.p1_name} vs {data.p2_name}")
-        title.setStyleSheet("font-weight: bold; font-size: 13px;")
-        layout.addWidget(title)
-
-    def _add_pairing_status(self, layout: QVBoxLayout, data: PairingCardData):
-        """Add assignment status to pairing card."""
-        status_text = create_status_text_from_data(data)
-        status = QLabel(status_text)
-        status.setStyleSheet("font-size: 12px;")
-        layout.addWidget(status)
-
-    def _add_pairing_stats(self, layout: QVBoxLayout, data: PairingCardData):
-        """Add digital round statistics to pairing card."""
-        combined = QLabel(
-            f"Combined digital rounds: {data.p1_count} + {data.p2_count} = {data.combined_count}"
-        )
-        combined.setStyleSheet("font-size: 11px; color: #718096;")
-        layout.addWidget(combined)
-
-    def _add_pairing_controls(self, layout: QVBoxLayout, data: PairingCardData):
-        """Add control buttons to pairing card."""
-        button_layout = QHBoxLayout()
-        pairing_id = data.pairing.id
-
-        if data.digital_label:
-            remove_assignment_btn = QPushButton("Remove Assignment")
-            remove_assignment_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
-            remove_assignment_btn.clicked.connect(
-                lambda checked, pid=pairing_id: self._remove_assignment(pid)
-            )
-            button_layout.addWidget(remove_assignment_btn)
-        else:
-            assign_btn = QPushButton("Assign")
-            assign_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
-            assign_btn.clicked.connect(
-                lambda checked, pid=pairing_id: self._manual_assign(pid)
-            )
-            button_layout.addWidget(assign_btn)
-
-        edit_btn = QPushButton("Edit")
-        edit_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
-        edit_btn.clicked.connect(
-            lambda checked, pid=pairing_id: self._edit_pairing(pid)
-        )
-        button_layout.addWidget(edit_btn)
-
-        remove_pairing_btn = QPushButton("Remove Pairing")
-        remove_pairing_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
-        remove_pairing_btn.clicked.connect(
-            lambda checked, pid=pairing_id: self._remove_pairing(pid)
-        )
-        button_layout.addWidget(remove_pairing_btn)
-
-        toggle_btn = self._create_toggle_button(data.is_excluded, pairing_id)
-        button_layout.addWidget(toggle_btn)
-
-        layout.addLayout(button_layout)
-
-    def _create_toggle_button(self, is_excluded: bool, pairing_id: int) -> QPushButton:
-        """Create exclude/include toggle button."""
-        text = "Include" if is_excluded else "Exclude"
-
-        toggle_btn = QPushButton(text)
-        toggle_btn.setStyleSheet(BUTTON_SECONDARY_STYLE)
-        toggle_btn.clicked.connect(
-            lambda checked, pid=pairing_id: self._toggle_exclude(pid)
-        )
-        return toggle_btn
+    @property
+    def _pairing_callbacks(self):
+        """Return callback adapter for pairing card buttons."""
+        return _PairingAdapter(self)
 
     def _refresh_current_view(self):
         self._load_participants()
@@ -545,16 +490,12 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             name, url, ttype = dialog.get_data()
             try:
-                from database import create_tournament
-
                 db_path, tid = create_tournament(name, url, ttype)
                 self.load_tournament(db_path)
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to create tournament: {e}")
 
     def _open_tournament(self):
-        from config import DATA_DIR
-
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Open Tournament", DATA_DIR, "SQLite Files (*.sqlite)"
         )
