@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 
+from PyQt6.QtWidgets import QMessageBox
 from sqlalchemy.orm import Session
 
 from database.queries import get_round, get_tournament
@@ -46,8 +47,6 @@ class ScraperPresenter:
 
     def _confirm_overwrite(self) -> bool:
         """Ask user if they want to overwrite existing rounds."""
-        from PyQt6.QtWidgets import QMessageBox
-
         reply = QMessageBox.question(
             None,
             "Confirm",
