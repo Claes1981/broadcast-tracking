@@ -286,6 +286,8 @@ class MainWindow(QMainWindow):
             self.db_path = db_path
 
             tournament = get_tournament(self.session, self.tournament_id)
+            if not tournament:
+                raise ValueError("Tournament not found in database")
             self._tournament_label.setText(f"Tournament: {tournament.name}")
 
             self._load_rounds()
@@ -510,6 +512,9 @@ class MainWindow(QMainWindow):
             return
 
         tournament = get_tournament(self.session, self.tournament_id)
+        if not tournament:
+            QMessageBox.warning(self, "Error", "Tournament data is invalid")
+            return
         existing_url = tournament.source_url or ""
 
         dialog = FetchPairingsDialog(self, existing_url)
@@ -553,6 +558,10 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to add round: {e}")
 
     def _export(self, format_type: str):
+        if not self.session:
+            QMessageBox.warning(self, "Error", "Please open a tournament first")
+            return
+
         dialog = ExportDialog(self)
         dialog._format_combo.setCurrentText(format_type)
 
