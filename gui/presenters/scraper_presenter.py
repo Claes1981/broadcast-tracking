@@ -86,10 +86,25 @@ class ScraperPresenter:
     def fetch_and_import(self, url: str) -> int:
         """Execute full scrape + import flow.
 
+        Tries API scraper first (more reliable for individual tournaments),
+        falls back to HTML scraper if API fails.
+
         Returns the number of rounds imported (0 if cancelled or failed).
         """
-        scraper = SchackSeScraper()
-        name, rounds = scraper.fetch_all_rounds(url)
+        from scrapers import SchackSeApiScraper
+
+        scraper: BaseScraper | None = None
+
+        # Try API scraper first
+        try:
+            scraper = SchackSeApiScraper()
+            name, rounds = scraper.fetch_all_rounds(url)
+            if not rounds:
+                raise ValueError("API returned no rounds")
+        except Exception:
+            # Fall back to HTML scraper
+            scraper = SchackSeScraper()
+            name, rounds = scraper.fetch_all_rounds(url)
 
         if not rounds:
             return -1  # Signal: no rounds found
