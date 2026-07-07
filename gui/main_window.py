@@ -344,8 +344,8 @@ class MainWindow(QMainWindow):
 
     def _clear_pairings_layout(self) -> None:
         """Clear all widgets from the pairings layout."""
-        while self._pairings_layout.count() > 1:
-            item = self._pairings_layout.takeAt(1)
+        while self._pairings_layout.count() > 0:
+            item = self._pairings_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
