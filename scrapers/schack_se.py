@@ -1,6 +1,7 @@
 from bs4 import BeautifulSoup
 import requests
 import re
+from config import SCRAPER_USER_AGENT
 from .base import BaseScraper
 
 
@@ -18,11 +19,7 @@ class SchackSeScraper(BaseScraper):
 
     def __init__(self):
         self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-        )
+        self.session.headers.update({"User-Agent": SCRAPER_USER_AGENT})
 
     def fetch_tournament_url(self, url: str) -> str:
         """Fetch the tournament page HTML."""
