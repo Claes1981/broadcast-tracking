@@ -86,25 +86,29 @@ class ScraperPresenter:
     def fetch_and_import(self, url: str) -> int:
         """Execute full scrape + import flow.
 
-        Tries API scraper first (more reliable for individual tournaments),
-        falls back to HTML scraper if API fails.
+        Selects scraper based on URL domain:
+        - member.schack.se → SchackSeApiScraper (with SchackSeScraper HTML fallback)
+        - chess-results.com → ChessResultsScraper
 
         Returns the number of rounds imported (0 if cancelled or failed).
         """
-        from scrapers import SchackSeApiScraper
+        from scrapers import ChessResultsScraper, SchackSeApiScraper
 
-        scraper: BaseScraper | None = None
+        scraper: BaseScraper
 
-        # Try API scraper first
-        try:
-            scraper = SchackSeApiScraper()
+        if "chess-results.com" in url:
+            scraper = ChessResultsScraper()
             name, rounds = scraper.fetch_all_rounds(url)
-            if not rounds:
-                raise ValueError("API returned no rounds")
-        except Exception:
-            # Fall back to HTML scraper
-            scraper = SchackSeScraper()
-            name, rounds = scraper.fetch_all_rounds(url)
+        else:
+            # Schack.se: try API first, fall back to HTML scraper
+            try:
+                scraper = SchackSeApiScraper()
+                name, rounds = scraper.fetch_all_rounds(url)
+                if not rounds:
+                    raise ValueError("API returned no rounds")
+            except Exception:
+                scraper = SchackSeScraper()
+                name, rounds = scraper.fetch_all_rounds(url)
 
         if not rounds:
             return -1  # Signal: no rounds found
