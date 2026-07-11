@@ -73,8 +73,14 @@ class ChessResultsScraper(BaseScraper):
         title = soup.find("title")
         if title:
             text = title.get_text(strip=True)
-            # Remove "Chess-Results Server Chess-results.com - " prefix
+            # Remove "Chess-Results Server ..." prefix
+            # Formats:
+            #   "Chess-Results Server Chess-results.com - Belgian Open 2026"
+            #   "Chess-Results Server - Tournament Name"
             text = re.sub(r"^Chess-Results[^-]*-\s*", "", text, count=1)
+            # If still has a trailing "something - " prefix (e.g. "results.com - ")
+            # strip one more segment
+            text = re.sub(r"^[^-]+-\s*", "", text, count=1)
             return text.strip()
 
         return "Unknown Tournament"
@@ -367,46 +373,59 @@ class ChessResultsScraper(BaseScraper):
     def _parse_individual_result(result_text: str) -> tuple[float | None, float | None]:
         """Parse individual tournament result.
 
-        Chess-Results uses standard notation: 1, 0, ½, or - for unfinished.
-        Score for white is the result value, black gets (1 - result).
+        Handles full format "X - Y" (e.g., "0 - 1", "½ - ½") and
+        single value format (e.g., "1", "0", "½").
+        Also handles fractional notation ⅓ and ⅔.
         """
         if not result_text or result_text == "-":
             return None, None
 
-        # Handle fractional notation: ½ → 0.5
+        # Handle "X - Y" format (e.g., "0 - 1", "½ - ½")
+        if " - " in result_text:
+            parts = result_text.split(" - ", 1)
+            white_score = ChessResultsScraper._parse_single_score(parts[0].strip())
+            black_score = ChessResultsScraper._parse_single_score(parts[1].strip())
+            return white_score, black_score
+
+        # Single value format: white's score, black gets (1 - white)
         result_text = (
             result_text.replace("½", "0.5").replace("⅓", "0.33").replace("⅔", "0.67")
         )
 
         try:
             white_score = float(result_text)
-            black_score = 1.0 - white_score
+            black_score = round(1.0 - white_score, 2)
             return white_score, black_score
         except ValueError:
             return None, None
 
     @staticmethod
+    def _parse_single_score(score_text: str) -> float | None:
+        """Parse a single score value, handling fractional notation.
+
+        Uses ".5" suffix for halves (not "0.5") to avoid "2½" → "20.5".
+        """
+        if not score_text:
+            return None
+        score_text = (
+            score_text.replace("½", ".5").replace("⅓", "0.33").replace("⅔", "0.67")
+        )
+        try:
+            return float(score_text)
+        except ValueError:
+            return None
+
+    @staticmethod
     def _parse_team_result(
         home_res: str, away_res: str
     ) -> tuple[float | None, float | None]:
-        """Parse team tournament result from two separate score cells."""
-        score1 = None
-        score2 = None
+        """Parse team tournament result from two separate score cells.
 
-        if home_res:
-            home_res = home_res.replace("½", "0.5")
-            try:
-                score1 = float(home_res)
-            except ValueError:
-                score1 = None
-
-        if away_res:
-            away_res = away_res.replace("½", "0.5")
-            try:
-                score2 = float(away_res)
-            except ValueError:
-                score2 = None
-
+        Uses _parse_single_score which handles "½" → ".5" correctly
+        (avoids "2½" → "20.5" digit concatenation).
+        """
+        score1 = ChessResultsScraper._parse_single_score(home_res) if home_res else None
+        score2 = ChessResultsScraper._parse_single_score(away_res) if away_res else None
         return score1, score2
 
     @staticmethod
