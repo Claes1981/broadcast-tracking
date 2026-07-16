@@ -4,8 +4,9 @@
 
 ```bash
 python main.py                          # Run app
-python -m pytest tests/ -v              # Run all tests
+python -m pytest tests/ -v              # Run all tests (~324 tests, 96% coverage)
 python -m pytest tests/ -v -k "allocation"  # Filter by keyword
+python -m pytest tests/ -v -k "not gui"  # Skip GUI tests
 ```
 
 GUI tests need `pytest-qt` and a display server. Use `-k "not gui"` to skip them.
@@ -13,9 +14,9 @@ GUI tests need `pytest-qt` and a display server. Use `-k "not gui"` to skip them
 ## Architecture
 
 ```
-main.py → gui/main_window.py (PyQt6 app)
+main.py → gui/main_window.py (PyQt6 app, ~573 lines after presenter extraction)
            └── gui/presenters/ (4 presenters, lazy-loaded via @property)
-               ├── scraper_presenter.py      (fetch & import rounds)
+               ├── scraper_presenter.py      (fetch & import rounds, URL-based scraper selection)
                ├── manual_entry_presenter.py (offline round entry)
                ├── round_view_presenter.py   (round/participant display data)
                └── allocation_presenter.py   (digital board allocation)
@@ -27,9 +28,9 @@ database/ → SQLAlchemy ORM, SQLite files in tournament_data/
            ├── queries.py      (all DB queries — logic/presenters MUST use this layer)
            └── init_db.py      (create/open tournament, uses queries.py)
 logic/ → allocator.py, tournament.py, pairing.py (dataclasses)
-scrapers/ → base.py (ABC), schack_se.py (Swedish Chess Federation)
+scrapers/ → base.py (ABC), schack_se.py (HTML), schack_se_api.py (REST API), chess_results.py (HTML)
 utils/ → export.py (Exporter strategy pattern: Csv/Json/Statistics)
-config.py → DATA_DIR, DEFAULT_DIGITAL_BOARDS, DIGITAL_BOARD_PREFIX, UI dimensions
+config.py → DATA_DIR, DEFAULT_DIGITAL_BOARDS, SCRAPER_USER_AGENT, UI dimensions
 ```
 
 ### Key Design Patterns
@@ -38,14 +39,15 @@ config.py → DATA_DIR, DEFAULT_DIGITAL_BOARDS, DIGITAL_BOARD_PREFIX, UI dimensi
 - **Lazy Loading**: Presenters are created lazily via `@property` + `@setter` pattern. The `@setter` enables test mocking.
 - **Strategy Pattern**: Export uses `Exporter` ABC with `CsvExporter`, `JsonExporter`, `StatisticsExporter`. Call `export(session, id, path, exporter_type)` dispatcher.
 - **Query Layer**: ALL SQLAlchemy queries go through `database/queries.py`. Logic and presenter layers must NOT use `session.query()` directly.
-- **Re-exports**: `database/__init__.py`, `logic/__init__.py`, `utils/__init__.py`, `gui/presenters/__init__.py` expose public APIs.
+- **Re-exports**: `database/__init__.py`, `logic/__init__.py`, `utils/__init__.py`, `gui/presenters/__init__.py`, `scrapers/__init__.py` expose public APIs.
 
 ### Module Responsibilities
 
 - `database/__init__.py` re-exports all query functions from `queries.py`
 - `logic/__init__.py` re-exports allocator, tournament, and dataclass functions
 - `logic/pairing.py` defines `PairingData`, `RoundData`, `TournamentData` dataclasses
-- `gui/styles.py` defines QSS constants and `create_card_style_from_data` / `create_status_text_from_data` helpers
+- `gui/styles.py` defines QSS constants (`NOT_ASSIGNED`, `MANUALLY_EXCLUDED`, `MANUALLY_ASSIGNED`, `DIGITAL_ASSIGNED`) and `create_card_style_from_data` / `create_status_text_from_data` helpers
+- `scrapers/__init__.py` exports `BaseScraper`, `SchackSeScraper`, `SchackSeApiScraper`, `ChessResultsScraper` via `__all__`
 - Each tournament gets its own SQLite file in `tournament_data/`
 
 ## Code Style
@@ -63,11 +65,25 @@ config.py → DATA_DIR, DEFAULT_DIGITAL_BOARDS, DIGITAL_BOARD_PREFIX, UI dimensi
 ## Testing
 
 - **Framework**: pytest with fixtures in `tests/conftest.py`
-- **Structure**: One test file per module (`test_app.py`, `test_gui.py`, `test_manual_entry.py`)
-- **Markers**: `--no-gui` flag skips GUI tests; `gui`, `integration`, `offline` markers
+- **Test files**:
+  - `test_app.py` — core app functionality
+  - `test_gui.py` — GUI widget tests
+  - `test_manual_entry.py` — manual entry workflow
+  - `test_api_scraper.py` — SchackSeApiScraper (100% coverage)
+  - `test_chess_results_scraper.py` — ChessResultsScraper (100% coverage, 72 tests)
+  - `test_presenters.py` — all 4 presenters (Allocation, Scraper, ManualEntry)
+  - `test_logic_and_queries.py` — logic layer, query layer, scraper parsing methods (39 tests)
+  - `test_coverage_gaps.py` — remaining coverage gaps across all modules (44 tests)
+- **Markers**: `gui`, `integration`, `offline`, `slow`
 - **Fixtures**: `project_root` (session scope), `test_data_dir` (session scope)
 - **Pattern**: Tests use `unittest.mock` for network/DB mocking
 - **Mocking presenters**: Use `@setter` on lazy `@property` to inject mock presenters in tests
+- **Coverage**: 96% overall (~324 tests). Run with `coverage run -m pytest tests/` then `coverage report --show-missing`
+
+### ScraperPresenter Test Patching
+
+- `SchackSeScraper` is imported at module level in `scraper_presenter.py` — patch on `gui.presenters.scraper_presenter.SchackSeScraper`
+- `ChessResultsScraper` and `SchackSeApiScraper` are imported inline in `fetch_and_import()` — patch via `patch.dict('scrapers.__dict__', ...)`
 
 ## GUI Conventions
 
@@ -77,18 +93,60 @@ config.py → DATA_DIR, DEFAULT_DIGITAL_BOARDS, DIGITAL_BOARD_PREFIX, UI dimensi
 - **Manual pairing dialog**: Uses `QComboBox(setEditable=True)` with sorted participant names; allows free-text entry
 - **ManualPairingDialog**: Uses `_p1_combo`/`_p2_combo` (QComboBox), reads from `.currentText()`
 - **ManualRoundDialog**: Accepts `participant_names: list[str] | None` parameter
-- **PairingCardBuilder**: Constructs pairing card widgets from `PairingCardData` objects via callback Protocol
+- **PairingCardBuilder**: Constructs pairing card widgets from `PairingCardData` objects via `PairingCallbacks` Protocol
 
-## Scraper Conventions
+## Scrapers
 
+### Scraper Selection (URL-based)
+
+`ScraperPresenter.fetch_and_import()` selects scraper based on URL:
+
+- `chess-results.com` → `ChessResultsScraper`
+- `member.schack.se` → `SchackSeApiScraper` (with `SchackSeScraper` HTML fallback)
+- Unknown URLs → defaults to Schack.se scrapers
+
+### SchackSeScraper (HTML)
+
+- Extends `BaseScraper` ABC, parses HTML from `member.schack.se`
 - **Multi-method parsing**: `parse_round_pairings` tries 3 methods in order
 - **Method 1**: Individual tournament format (`greyproptable` with `listheader` cells)
+  - Requires both `listheader` cells AND `listheadercenter` result cells
   - Filter: Skip rows where `team2.startswith("E") and team2[1:].isdigit()` (Elo ratings)
 - **Method 2**: Team tournament format with `HEMMALAG`/`BORTALAG` column headers
-- **Method 3**: Headerless team tournament with fixed cell positions:
-  - C4=home team, C6=home Elo, C8="-", C12=away team, C14=away Elo, C16=result
+- **Method 3**: Headerless team tournament with fixed cell positions (named constants: `HEADERLESS_MIN_CELLS=17`, `CELL_HOME_TEAM=4`, `CELL_SEPARATOR=8`, `CELL_AWAY_TEAM=12`, `CELL_RESULT=16`)
 - **Fractional score parsing**: Replace "½" → ".5" (NOT "0.5") to avoid "3½" → "30.5"
-- **Base class**: `BaseScraper` ABC defines interface + concrete workflow methods (`fetch_all_rounds`, `fetch_round_pairings`)
+- Individual tournament HTML scraping is broken (round links loaded via JavaScript)
+
+### SchackSeApiScraper (REST API)
+
+- Extends `BaseScraper` ABC, uses JSON endpoints at `/public/api/v1/`
+- Endpoints: group info, individual round results, team round results, player lookup, club lookup
+- Caches player/club lookups in `_player_cache` / `_club_cache`
+- Caches full tournament results in `_all_results` (filters by round on demand)
+- More reliable for individual tournaments (HTML scraper doesn't work)
+- Name resolution: individual tournaments look up player name, team tournaments look up club name + team number
+
+### ChessResultsScraper (HTML)
+
+- Extends `BaseScraper` ABC, uses BeautifulSoup with lxml parser
+- Scrapes board pairings pages (`art=2`) from `chess-results.com`
+- Auto-detects individual (13+ cells) vs team (6 columns) tournaments by first data row cell count
+- **Header-based column detection**: `_detect_individual_layout()` finds 'White' and 'Black' header labels, then derives title, name, and result indices dynamically — handles varying tournament layouts (13-col, 15-col, etc.)
+- Combines player titles with names in output (e.g., "FM Holeksa, Zdenek")
+- Tournament ID via `tnr(\d+)` regex, tournament name from H2 or page title
+- Tournament name parsing uses two-step regex stripping to handle both 3-hyphen and 2-hyphen title formats
+- Score parsing splits on " - " for individual results; `_parse_single_score()` replaces "½" with ".5" suffix to avoid digit concatenation
+- Handles `s1.chess-results.com` and other subdomain variants
+
+### BaseScraper ABC
+
+- Defines abstract methods: `fetch_tournament_url`, `parse_tournament_name`, `parse_rounds`, `parse_round_pairings`
+- Provides concrete default implementations of `fetch_all_rounds` and `fetch_round_pairings` (fixed LSP violation)
+
+### User-Agent
+
+- All scrapers use `SCRAPER_USER_AGENT` from `config.py`: `"broadcast-tracking/1.0 (<https://github.com/Claes1981/broadcast-tracking>)"`
+- Honest identification policy — no fake Mozilla/Windows strings
 
 ## Database Conventions
 
@@ -101,6 +159,7 @@ config.py → DATA_DIR, DEFAULT_DIGITAL_BOARDS, DIGITAL_BOARD_PREFIX, UI dimensi
 - **Digital assignment**: `uselist=False` for one-to-one pairing relationship
 - **Queries**: `queries.py` functions return `.first()` → type hints use `X | None`
 - **Datetime**: Use `datetime.now()` for defaults (NOT deprecated `datetime.utcnow()`)
+- **Query functions**: `get_tournament`, `get_participant_by_name`, `get_round`, `get_round_by_id`, `get_round_tournament_id`, `get_pairing_by_id`, `get_digital_assignment`, `get_digital_assignment_by_id`, `get_max_round`, `get_round_numbers`, `get_round_pairings`, `count_digital_rounds_for_participant`, `get_participant_digital_counts`, `get_pairing_digital_sum`, `get_first_tournament`
 
 ## Key Conventions
 
@@ -108,8 +167,10 @@ config.py → DATA_DIR, DEFAULT_DIGITAL_BOARDS, DIGITAL_BOARD_PREFIX, UI dimensi
 - **Fractional scores**: Parse "½" → ".5" (not "0.5") to avoid "3½" → "30.5"
 - **Tournament types**: "individual" or "team"
 - **Team pairings**: Scraper uses HEMMALAG (home) vs BORTALAG (away) columns
-- **Re-exports**: `logic/__init__.py`, `database/__init__.py`, `utils/__init__.py` expose public API
-- **Magic numbers**: Named constants in `config.py` (UI dimensions) and scraper classes
+- **Re-exports**: `logic/__init__.py`, `database/__init__.py`, `utils/__init__.py`, `scrapers/__init__.py` expose public API
+- **Magic numbers**: Named constants in `config.py` (UI dimensions, scraper identity) and scraper classes
+- **Export format types**: Case-sensitive — 'CSV', 'JSON', 'Statistics' in `EXPORTERS` dict
+- **CsvExporter**: Only outputs rows for pairings that have `digital_assignment`
 
 ## Common Pitfalls
 
@@ -123,11 +184,18 @@ config.py → DATA_DIR, DEFAULT_DIGITAL_BOARDS, DIGITAL_BOARD_PREFIX, UI dimensi
 8. **`not Column[bool]` bug**: SQLAlchemy `Column[bool]` is always truthy — use `Column == False` instead
 9. **session.flush() needed**: After `session.delete()` in allocator, flush before new INSERT to avoid UNIQUE constraint errors
 10. **Presenter lazy loading**: Use `@setter` to mock presenters in tests that bypass `load_tournament`
+11. **ScraperPresenter patching**: `SchackSeScraper` is module-level (patch on presenter module), `ChessResultsScraper`/`SchackSeApiScraper` are inline (patch via `patch.dict('scrapers.__dict__', ...)`)
+12. **SchackSe Method 1**: Requires both `listheader` AND `listheadercenter` cells + 2+ rows to trigger
+13. **edit_pairing flush bug**: Creates new Participant objects but doesn't flush before updating pairing IDs — causes IntegrityError
+14. **get_pairing_digital_sum**: Returns `int | None` (None for unassigned pairings), counts across all pairings not just one
+15. **AllocationPresenter.remove_pairing**: Calls `QMessageBox.question()` before try/except — tests must mock it to return Yes
+16. **PairingCardBuilder tests**: Require real QApplication (QPushButton instantiation crashes without one)
+17. **Pre-existing flaky test**: `test_manual_entry_preserves_on_reallocation` fails in full suite due to SQLite race condition across test modules
 
 ## Data Flow
 
 1. Create tournament → SQLite DB in `tournament_data/`
-2. Fetch pairings (ScraperPresenter) OR manual entry (ManualEntryPresenter, offline mode)
+2. Fetch pairings (ScraperPresenter with URL-based scraper selection) OR manual entry (ManualEntryPresenter, offline mode)
 3. Allocate digital boards (AllocationPresenter → logic/allocator.py)
 4. Manual adjustments override allocation (preserved on re-allocation)
 5. Export via strategy pattern (`export()` dispatcher → Csv/Json/StatisticsExporter)
