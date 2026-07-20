@@ -1,34 +1,15 @@
-"""
-GUI Tests for Broadcast Board Tracker
+"""GUI tests for Broadcast Board Tracker.
 
-Tests for the PyQt6 GUI components including:
-- Main window functionality
-- Dialog interactions
-- Manual data entry workflows
-- Error handling in GUI
+Dialog interactions, manual data entry workflows, and error handling.
 """
 
 import pytest
-import sys
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-# Need to check if we can import PyQt6
-try:
-    from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtCore import QSignalBlocker
-
-    HAS_QT = True
-except ImportError:
-    HAS_QT = False
+from unittest.mock import Mock, patch
 
 
-# Skip all tests if PyQt6 is not available
+HAS_QT = True
+
 pytestmark = pytest.mark.skipif(not HAS_QT, reason="PyQt6 not available")
-
 
 from gui.dialogs import (
     NewTournamentDialog,
@@ -41,16 +22,6 @@ from gui.dialogs import (
 # ============================================================================
 # GUI TESTS - Dialogs
 # ============================================================================
-
-
-@pytest.fixture
-def qt_app():
-    """Create a QApplication for testing."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
-    app.quit()
 
 
 class TestNewTournamentDialog:
@@ -343,9 +314,7 @@ class TestOfflineModeGui:
 
                 # Mock presenter to raise network error
                 mock_presenter = Mock()
-                mock_presenter.fetch_and_import.side_effect = Exception(
-                    "Network error"
-                )
+                mock_presenter.fetch_and_import.side_effect = Exception("Network error")
                 window._scraper_presenter = mock_presenter
 
                 # Try to fetch

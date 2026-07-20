@@ -1,29 +1,13 @@
-"""
-Manual Entry Tests for Broadcast Board Tracker
+"""Manual entry tests for Broadcast Board Tracker.
 
-Tests for complete offline manual data entry workflow without internet connection
-or Swedish Chess Federation URL.
+Offline manual data entry workflow without internet connection.
 """
 
 import pytest
-import sys
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Need to check if we can import PyQt6
-try:
-    from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtCore import QSignalBlocker
-
-    HAS_QT = True
-except ImportError:
-    HAS_QT = False
-
-# Skip all tests if PyQt6 is not available
-pytestmark = pytest.mark.skipif(not HAS_QT, reason="PyQt6 not available")
+HAS_QT = True
 
 from gui.dialogs import ManualRoundDialog, ManualPairingDialog
 from database import create_tournament, get_session, get_all_rounds, get_round_pairings
@@ -36,16 +20,6 @@ from logic.allocator import allocate_digital_boards
 # ============================================================================
 # MANUAL ENTRY DIALOG TESTS
 # ============================================================================
-
-
-@pytest.fixture
-def qt_app():
-    """Create a QApplication for testing."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
-    app.quit()
 
 
 @pytest.fixture
@@ -172,7 +146,9 @@ class TestManualPairingDialog:
         assert dialog._p1_combo.count() == 4
         assert dialog._p2_combo.count() == 4
 
-        items_p1 = [dialog._p1_combo.itemText(i) for i in range(dialog._p1_combo.count())]
+        items_p1 = [
+            dialog._p1_combo.itemText(i) for i in range(dialog._p1_combo.count())
+        ]
         assert items_p1 == sorted(names)
 
     def test_dialog_select_existing_participant(self, qt_app):
@@ -287,8 +263,8 @@ class TestOfflineManualWorkflow:
             round_data = RoundData(
                 round_number=round_num,
                 pairings=[
-                    PairingData(f"Team A", f"Team B", board_number=1),
-                    PairingData(f"Team C", f"Team D", board_number=2),
+                    PairingData("Team A", "Team B", board_number=1),
+                    PairingData("Team C", "Team D", board_number=2),
                 ],
             )
             create_round_from_data(session, tournament_id, round_data, "team")

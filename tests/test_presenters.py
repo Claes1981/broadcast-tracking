@@ -1,98 +1,16 @@
-"""Tests for presenters (AllocationPresenter, ScraperPresenter, ManualEntryPresenter).
+"""Tests for presenters (Allocation, Scraper, ManualEntry).
 
-Tests business logic in presenters, mocking GUI interactions (QMessageBox, QInputDialog)
-and using real tournament data for DB operations.
+Mocks GUI interactions (QMessageBox, QInputDialog) and uses real DB data.
 """
 
-import os
-import shutil
-import tempfile
-
-import pytest
 from unittest.mock import Mock, patch
 
-from database.init_db import create_database, create_tournament, get_session
 from logic.pairing import PairingData, RoundData
 from logic.tournament import import_rounds_from_data
+
 from gui.presenters.allocation_presenter import AllocationPresenter
 from gui.presenters.scraper_presenter import ScraperPresenter
 from gui.presenters.manual_entry_presenter import ManualEntryPresenter
-
-
-# ============================================================================
-# FIXTURES
-# ============================================================================
-
-
-@pytest.fixture
-def temp_db():
-    """Create a temporary database for testing."""
-    temp_dir = tempfile.mkdtemp()
-    db_path = os.path.join(temp_dir, "test.sqlite")
-    create_database("test")
-
-    from database import init_db
-
-    original_get_path = init_db.get_database_path
-    call_counter = [0]
-
-    def mock_get_path(name):
-        call_counter[0] += 1
-        if call_counter[0] == 1:
-            return db_path
-        return os.path.join(temp_dir, f"test_{call_counter[0]}.sqlite")
-
-    init_db.get_database_path = mock_get_path
-    yield db_path
-
-    shutil.rmtree(temp_dir)
-    init_db.get_database_path = original_get_path
-
-
-@pytest.fixture
-def tournament_session(temp_db):
-    """Create a tournament and return (session, tournament_id, db_path)."""
-    db_path, tournament_id = create_tournament(
-        name="Test Tournament",
-        source_url="https://member.schack.se/test",
-        tournament_type="individual",
-    )
-    session = get_session(db_path)
-    yield session, tournament_id, db_path
-    session.close()
-
-
-@pytest.fixture
-def tournament_with_rounds(temp_db):
-    """Create a tournament with a round and pairings."""
-    db_path, tournament_id = create_tournament(
-        name="Test Tournament",
-        source_url="https://example.com",
-        tournament_type="individual",
-    )
-    session = get_session(db_path)
-
-    pairings = [
-        PairingData(
-            participant1_name="Alice", participant2_name="Bob", score1=1, score2=0
-        ),
-        PairingData(
-            participant1_name="Charlie",
-            participant2_name="David",
-            score1=0.5,
-            score2=0.5,
-        ),
-        PairingData(
-            participant1_name="Eve", participant2_name="Frank", score1=0, score2=1
-        ),
-    ]
-    import_rounds_from_data(
-        session, tournament_id, [RoundData(1, pairings)], "individual"
-    )
-    session.commit()
-
-    yield session, tournament_id, db_path
-    session.close()
 
 
 # ============================================================================

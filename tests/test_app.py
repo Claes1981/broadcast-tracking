@@ -1,30 +1,18 @@
-"""
-Broadcast Board Tracker - Test Suite
+"""Broadcast Board Tracker - core app tests.
 
-Comprehensive tests including:
-- Unit tests for individual components
-- Integration tests for database operations
-- GUI tests for manual operations
-- Offline mode tests (when scraper is unavailable)
-- Manual correction tests
+Tests allocator, tournament management, scraper parsing, export, and edge cases.
 """
+
+import os
+import tempfile
 
 import pytest
-import os
-import sys
-import tempfile
-import shutil
-from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from unittest.mock import Mock, patch, MagicMock
-from sqlalchemy.orm import Session
+from unittest.mock import Mock, patch
 
 # Database imports
-from database.models import Tournament, Participant, Round, Pairing, DigitalAssignment
-from database.init_db import create_database, get_session, create_tournament
+from database.models import Tournament, Participant, Round, Pairing
+from database.init_db import get_session, create_tournament
 from database.queries import (
     get_all_participants,
     get_all_rounds,
@@ -62,35 +50,6 @@ from utils.export import export_to_csv, export_to_json, export_statistics
 
 
 @pytest.fixture
-def temp_db():
-    """Create a temporary database for testing."""
-    temp_dir = tempfile.mkdtemp()
-    db_path = os.path.join(temp_dir, "test.sqlite")
-    create_database("test")
-
-    # Override with our temp path
-    from database import init_db
-
-    original_get_path = init_db.get_database_path
-    call_counter = [0]  # Use list to allow modification in closure
-
-    def mock_get_path(name):
-        call_counter[0] += 1
-        if call_counter[0] == 1:
-            return db_path
-        # For subsequent calls (collision scenario), return different path
-        return os.path.join(temp_dir, f"test_{call_counter[0]}.sqlite")
-
-    init_db.get_database_path = mock_get_path
-
-    yield db_path
-
-    # Cleanup
-    shutil.rmtree(temp_dir)
-    init_db.get_database_path = original_get_path
-
-
-@pytest.fixture
 def test_tournament(temp_db):
     """Create a test tournament with sample data."""
     db_path, tournament_id = create_tournament(
@@ -110,38 +69,38 @@ def test_tournament(temp_db):
     session.commit()
 
     # Create rounds with pairings
-    rounds = []
     for round_num in range(1, 4):
-        round_obj = Round(tournament_id=tournament_id, round_number=round_num)
-        session.add(round_obj)
+        session.add(Round(tournament_id=tournament_id, round_number=round_num))
     session.commit()
 
     # Create pairings for each round
     for i, round_obj in enumerate(
         session.query(Round).order_by(Round.round_number).all()
     ):
-        pairing1 = Pairing(
-            round_id=round_obj.id,
-            participant1_id=participants[0].id,
-            participant2_id=participants[1].id,
-            board_number=i + 1,
+        session.add(
+            Pairing(
+                round_id=round_obj.id,
+                participant1_id=participants[0].id,
+                participant2_id=participants[1].id,
+                board_number=i + 1,
+            )
         )
-        pairing2 = Pairing(
-            round_id=round_obj.id,
-            participant1_id=participants[2].id,
-            participant2_id=participants[3].id,
-            board_number=i + 2,
+        session.add(
+            Pairing(
+                round_id=round_obj.id,
+                participant1_id=participants[2].id,
+                participant2_id=participants[3].id,
+                board_number=i + 2,
+            )
         )
-        pairing3 = Pairing(
-            round_id=round_obj.id,
-            participant1_id=participants[4].id,
-            participant2_id=participants[5].id,
-            board_number=i + 3,
+        session.add(
+            Pairing(
+                round_id=round_obj.id,
+                participant1_id=participants[4].id,
+                participant2_id=participants[5].id,
+                board_number=i + 3,
+            )
         )
-        session.add(pairing1)
-        session.add(pairing2)
-        session.add(pairing3)
-
     session.commit()
 
     yield {
@@ -151,7 +110,6 @@ def test_tournament(temp_db):
         "participants": participants,
         "rounds": session.query(Round).all(),
     }
-
     session.close()
 
 
@@ -697,9 +655,11 @@ class TestScraperOffline:
         mock_response_team.status_code = 200
         mock_response_team.text = "<html>Team tournament data</html>"
 
-        with patch.object(scraper.session, "get", side_effect=[
-            mock_response_individual, mock_response_team
-        ]) as mock_get:
+        with patch.object(
+            scraper.session,
+            "get",
+            side_effect=[mock_response_individual, mock_response_team],
+        ) as mock_get:
             result = scraper.fetch_round_url(
                 "https://member.schack.se/tournament?id=17852", 1
             )
@@ -723,7 +683,9 @@ class TestScraperOffline:
         mock_response.status_code = 200
         mock_response.text = "<html>Individual tournament data</html>"
 
-        with patch.object(scraper.session, "get", return_value=mock_response) as mock_get:
+        with patch.object(
+            scraper.session, "get", return_value=mock_response
+        ) as mock_get:
             result = scraper.fetch_round_url(
                 "https://member.schack.se/tournament?id=123", 2
             )
