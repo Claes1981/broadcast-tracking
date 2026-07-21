@@ -3,6 +3,7 @@
 Offline manual data entry workflow without internet connection.
 """
 
+import os
 import pytest
 from unittest.mock import Mock, patch
 
@@ -23,35 +24,21 @@ from logic.allocator import allocate_digital_boards
 
 
 @pytest.fixture
-def offline_tournament(qt_app):
+def offline_tournament(qt_app, mock_database_path):
     """Create an offline tournament without URL."""
-    import tempfile
-    import os
-    from database import init_db
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        original_get_path = init_db.get_database_path
-
-        def mock_get_path(name):
-            return os.path.join(temp_dir, "offline_test.sqlite")
-
-        init_db.get_database_path = mock_get_path
-
-        try:
-            db_path, tournament_id = create_tournament(
-                name="Offline Tournament",
-                source_url=None,
-                tournament_type="team",
-            )
-            session = get_session(db_path)
-            yield {
-                "db_path": db_path,
-                "tournament_id": tournament_id,
-                "session": session,
-            }
-            session.close()
-        finally:
-            init_db.get_database_path = original_get_path
+    with mock_database_path() as db_path:
+        _, tournament_id = create_tournament(
+            name="Offline Tournament",
+            source_url=None,
+            tournament_type="team",
+        )
+        session = get_session(db_path)
+        yield {
+            "db_path": db_path,
+            "tournament_id": tournament_id,
+            "session": session,
+        }
+        session.close()
 
 
 class TestManualRoundDialog:
@@ -173,38 +160,24 @@ class TestManualPairingDialog:
 class TestOfflineManualWorkflow:
     """Tests for complete offline manual entry workflow."""
 
-    def test_create_offline_tournament(self, qt_app):
+    def test_create_offline_tournament(self, qt_app, mock_database_path):
         """Test creating a tournament without URL."""
-        import tempfile
-        import os
-        from database import init_db
+        with mock_database_path() as db_path:
+            _, tournament_id = create_tournament(
+                name="No Internet Tournament",
+                source_url=None,
+                tournament_type="individual",
+            )
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            original_get_path = init_db.get_database_path
+            assert tournament_id is not None
+            assert os.path.exists(db_path)
 
-            def mock_get_path(name):
-                return os.path.join(temp_dir, "test.sqlite")
+            session = get_session(db_path)
+            from database.models import Tournament
 
-            init_db.get_database_path = mock_get_path
-
-            try:
-                db_path, tournament_id = create_tournament(
-                    name="No Internet Tournament",
-                    source_url=None,
-                    tournament_type="individual",
-                )
-
-                assert tournament_id is not None
-                assert os.path.exists(db_path)
-
-                session = get_session(db_path)
-                from database.models import Tournament
-
-                tournament = session.query(Tournament).first()
-                assert tournament.source_url is None
-                session.close()
-            finally:
-                init_db.get_database_path = original_get_path
+            tournament = session.query(Tournament).first()
+            assert tournament.source_url is None
+            session.close()
 
     def test_manual_round_creation(self, offline_tournament):
         """Test manually creating a round with pairings."""

@@ -83,6 +83,46 @@ def qt_app():
 
 
 @pytest.fixture
+def mock_database_path():
+    """Yield a factory that creates context managers mocking init_db.get_database_path.
+
+    Each call creates a fresh temp directory. The temp dir is cleaned up on exit.
+
+    Usage:
+        def test_something(mock_database_path):
+            with mock_database_path() as db_path:
+                create_tournament("My Tournament")  # uses db_path
+    """
+    from contextlib import suppress
+    from database import init_db
+
+    original_get_path = init_db.get_database_path
+    temp_dirs: list[str] = []
+
+    class _MockPath:
+        def __enter__(self):
+            temp_dir = tempfile.mkdtemp()
+            temp_dirs.append(temp_dir)
+            init_db.get_database_path = lambda name: os.path.join(
+                temp_dir, "test.sqlite"
+            )
+            return os.path.join(temp_dir, "test.sqlite")
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            init_db.get_database_path = original_get_path
+
+    def factory():
+        return _MockPath()
+
+    yield factory
+
+    # Cleanup all temp directories after test
+    for d in temp_dirs:
+        with suppress(OSError):
+            shutil.rmtree(d)
+
+
+@pytest.fixture
 def temp_db():
     """Create a temporary database for testing.
 

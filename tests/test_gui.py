@@ -179,54 +179,40 @@ class TestManualDataEntryWorkflow:
         mock_dialog.assert_called_once()
 
     @patch("gui.main_window.QMessageBox")
-    def test_manual_pairing_entry_workflow(self, mock_messagebox, qt_app):
+    def test_manual_pairing_entry_workflow(
+        self, mock_messagebox, qt_app, mock_database_path
+    ):
         """Test complete manual pairing entry workflow."""
         from database import create_tournament, get_session
         from logic.tournament import import_rounds_from_data
         from logic.pairing import RoundData, PairingData
-        import tempfile
-        import os
 
-        # Create tournament
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Mock database path
-            from database import init_db
+        with mock_database_path() as db_path:
+            _, tournament_id = create_tournament("Manual Entry Test")
+            session = get_session(db_path)
 
-            original_get_path = init_db.get_database_path
+            # Manually enter pairings for round 1
+            round_data = RoundData(
+                round_number=1,
+                pairings=[
+                    PairingData("Team A", "Team B", board_number=1),
+                    PairingData("Team C", "Team D", board_number=2),
+                    PairingData("Team E", "Team F", board_number=3),
+                ],
+            )
 
-            def mock_get_path(name):
-                return os.path.join(temp_dir, "test.sqlite")
+            import_rounds_from_data(session, tournament_id, [round_data], "team")
 
-            init_db.get_database_path = mock_get_path
+            # Verify data was entered
+            from database.queries import get_all_rounds, get_round_pairings
 
-            try:
-                db_path, tournament_id = create_tournament("Manual Entry Test")
-                session = get_session(db_path)
+            rounds = get_all_rounds(session, tournament_id)
+            assert len(rounds) == 1
 
-                # Manually enter pairings for round 1
-                round_data = RoundData(
-                    round_number=1,
-                    pairings=[
-                        PairingData("Team A", "Team B", board_number=1),
-                        PairingData("Team C", "Team D", board_number=2),
-                        PairingData("Team E", "Team F", board_number=3),
-                    ],
-                )
+            pairings = get_round_pairings(session, rounds[0].id)
+            assert len(pairings) == 3
 
-                import_rounds_from_data(session, tournament_id, [round_data], "team")
-
-                # Verify data was entered
-                from database.queries import get_all_rounds, get_round_pairings
-
-                rounds = get_all_rounds(session, tournament_id)
-                assert len(rounds) == 1
-
-                pairings = get_round_pairings(session, rounds[0].id)
-                assert len(pairings) == 3
-
-                session.close()
-            finally:
-                init_db.get_database_path = original_get_path
+            session.close()
 
 
 # ============================================================================
@@ -286,101 +272,75 @@ class TestOfflineModeGui:
     """Tests for offline mode in GUI."""
 
     @patch("gui.main_window.QMessageBox")
-    def test_fetch_with_network_error(self, mock_messagebox, qt_app):
+    def test_fetch_with_network_error(
+        self, mock_messagebox, qt_app, mock_database_path
+    ):
         """Test fetching pairings when network is down."""
         from gui.main_window import MainWindow
         from database import create_tournament, get_session
 
-        # Create a tournament first
-        import tempfile
-        import os
-        from database import init_db
+        with mock_database_path() as db_path:
+            _, tournament_id = create_tournament("Offline Test")
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            original_get_path = init_db.get_database_path
+            window = MainWindow()
+            window.db_path = db_path
+            window.tournament_id = tournament_id
+            window.session = get_session(db_path)
 
-            def mock_get_path(name):
-                return os.path.join(temp_dir, "test.sqlite")
+            # Mock presenter to raise network error
+            mock_presenter = Mock()
+            mock_presenter.fetch_and_import.side_effect = Exception("Network error")
+            window._scraper_presenter = mock_presenter
 
-            init_db.get_database_path = mock_get_path
+            # Try to fetch
+            window._do_fetch_pairings("https://member.schack.se/test")
 
-            try:
-                db_path, tournament_id = create_tournament("Offline Test")
+            # Should show error
+            mock_messagebox.critical.assert_called_once()
 
-                window = MainWindow()
-                window.db_path = db_path
-                window.tournament_id = tournament_id
-                window.session = get_session(db_path)
-
-                # Mock presenter to raise network error
-                mock_presenter = Mock()
-                mock_presenter.fetch_and_import.side_effect = Exception("Network error")
-                window._scraper_presenter = mock_presenter
-
-                # Try to fetch
-                window._do_fetch_pairings("https://member.schack.se/test")
-
-                # Should show error
-                mock_messagebox.critical.assert_called_once()
-
-                window.session.close()
-            finally:
-                init_db.get_database_path = original_get_path
+            window.session.close()
 
     @patch("gui.main_window.QMessageBox")
-    def test_manual_entry_as_fallback(self, mock_messagebox, qt_app):
+    def test_manual_entry_as_fallback(
+        self, mock_messagebox, qt_app, mock_database_path
+    ):
         """Test that manual entry works as fallback when scraper fails."""
         from database import create_tournament, get_session
         from logic.tournament import import_rounds_from_data
         from logic.pairing import RoundData, PairingData
-        import tempfile
-        import os
-        from database import init_db
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            original_get_path = init_db.get_database_path
+        with mock_database_path() as db_path:
+            # Create tournament without URL
+            _, tournament_id = create_tournament("Manual Fallback", source_url=None)
+            session = get_session(db_path)
 
-            def mock_get_path(name):
-                return os.path.join(temp_dir, "test.sqlite")
+            # Manually enter data as fallback
+            rounds_data = [
+                RoundData(
+                    round_number=1,
+                    pairings=[
+                        PairingData("A", "B"),
+                        PairingData("C", "D"),
+                    ],
+                ),
+                RoundData(
+                    round_number=2,
+                    pairings=[
+                        PairingData("A", "C"),
+                        PairingData("B", "D"),
+                    ],
+                ),
+            ]
 
-            init_db.get_database_path = mock_get_path
+            import_rounds_from_data(session, tournament_id, rounds_data, "team")
 
-            try:
-                # Create tournament without URL
-                db_path, tournament_id = create_tournament(
-                    "Manual Fallback", source_url=None
-                )
-                session = get_session(db_path)
+            # Verify data
+            from database.queries import get_all_rounds
 
-                # Manually enter data as fallback
-                rounds_data = [
-                    RoundData(
-                        round_number=1,
-                        pairings=[
-                            PairingData("A", "B"),
-                            PairingData("C", "D"),
-                        ],
-                    ),
-                    RoundData(
-                        round_number=2,
-                        pairings=[
-                            PairingData("A", "C"),
-                            PairingData("B", "D"),
-                        ],
-                    ),
-                ]
+            rounds = get_all_rounds(session, tournament_id)
+            assert len(rounds) == 2
 
-                import_rounds_from_data(session, tournament_id, rounds_data, "team")
-
-                # Verify data
-                from database.queries import get_all_rounds
-
-                rounds = get_all_rounds(session, tournament_id)
-                assert len(rounds) == 2
-
-                session.close()
-            finally:
-                init_db.get_database_path = original_get_path
+            session.close()
 
 
 # ============================================================================
