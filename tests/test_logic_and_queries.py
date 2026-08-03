@@ -12,9 +12,6 @@ Covers:
 """
 
 import pytest
-import tempfile
-import shutil
-from pathlib import Path
 from unittest.mock import Mock
 
 
@@ -57,107 +54,90 @@ from scrapers.schack_se import SchackSeScraper
 
 
 @pytest.fixture
-def temp_db_path():
-    """Create a temporary database path."""
-    temp_dir = tempfile.mkdtemp()
-    db_path = Path(temp_dir) / "test.sqlite"
-    from database import init_db
-
-    original_get_path = init_db.get_database_path
-
-    def mock_get_path(name):
-        return str(db_path)
-
-    init_db.get_database_path = mock_get_path
-    yield db_path
-    shutil.rmtree(temp_dir)
-    init_db.get_database_path = original_get_path
-
-
-@pytest.fixture
-def populated_tournament(temp_db_path):
+def populated_tournament(mock_database_path):
     """Create a tournament with participants, rounds, and pairings."""
-    db_path, tournament_id = create_tournament(
-        name="Coverage Test",
-        source_url="https://example.com",
-        tournament_type="individual",
-    )
-    session = get_session(db_path)
-
-    # Create 4 participants
-    participants = []
-    for name in ["Alice", "Bob", "Charlie", "Diana"]:
-        p = Participant(
-            tournament_id=tournament_id, name=name, participant_type="player"
+    with mock_database_path() as db_path:
+        _, tournament_id = create_tournament(
+            name="Coverage Test",
+            source_url="https://example.com",
+            tournament_type="individual",
         )
-        session.add(p)
-        participants.append(p)
-    session.commit()
+        session = get_session(db_path)
 
-    # Create round 1 with 2 pairings
-    round1 = Round(tournament_id=tournament_id, round_number=1)
-    session.add(round1)
-    session.flush()
+        # Create 4 participants
+        participants = []
+        for name in ["Alice", "Bob", "Charlie", "Diana"]:
+            p = Participant(
+                tournament_id=tournament_id, name=name, participant_type="player"
+            )
+            session.add(p)
+            participants.append(p)
+        session.commit()
 
-    pairing1 = Pairing(
-        round_id=round1.id,
-        participant1_id=participants[0].id,
-        participant2_id=participants[1].id,
-        board_number=1,
-        score1=1.0,
-        score2=0.0,
-    )
-    pairing2 = Pairing(
-        round_id=round1.id,
-        participant1_id=participants[2].id,
-        participant2_id=participants[3].id,
-        board_number=2,
-        score1=0.5,
-        score2=0.5,
-    )
-    session.add_all([pairing1, pairing2])
-    session.commit()
+        # Create round 1 with 2 pairings
+        round1 = Round(tournament_id=tournament_id, round_number=1)
+        session.add(round1)
+        session.flush()
 
-    # Create round 2 with 2 pairings
-    round2 = Round(tournament_id=tournament_id, round_number=2)
-    session.add(round2)
-    session.flush()
+        pairing1 = Pairing(
+            round_id=round1.id,
+            participant1_id=participants[0].id,
+            participant2_id=participants[1].id,
+            board_number=1,
+            score1=1.0,
+            score2=0.0,
+        )
+        pairing2 = Pairing(
+            round_id=round1.id,
+            participant1_id=participants[2].id,
+            participant2_id=participants[3].id,
+            board_number=2,
+            score1=0.5,
+            score2=0.5,
+        )
+        session.add_all([pairing1, pairing2])
+        session.commit()
 
-    pairing3 = Pairing(
-        round_id=round2.id,
-        participant1_id=participants[0].id,
-        participant2_id=participants[2].id,
-        board_number=1,
-        score1=0.0,
-        score2=1.0,
-    )
-    pairing4 = Pairing(
-        round_id=round2.id,
-        participant1_id=participants[1].id,
-        participant2_id=participants[3].id,
-        board_number=2,
-        score1=1.0,
-        score2=0.0,
-    )
-    session.add_all([pairing3, pairing4])
-    session.commit()
+        # Create round 2 with 2 pairings
+        round2 = Round(tournament_id=tournament_id, round_number=2)
+        session.add(round2)
+        session.flush()
 
-    # Assign digital boards to pairing1 and pairing3
-    da1 = DigitalAssignment(pairing_id=pairing1.id, digital_board_label="Board A")
-    da2 = DigitalAssignment(pairing_id=pairing3.id, digital_board_label="Board A")
-    session.add_all([da1, da2])
-    session.commit()
+        pairing3 = Pairing(
+            round_id=round2.id,
+            participant1_id=participants[0].id,
+            participant2_id=participants[2].id,
+            board_number=1,
+            score1=0.0,
+            score2=1.0,
+        )
+        pairing4 = Pairing(
+            round_id=round2.id,
+            participant1_id=participants[1].id,
+            participant2_id=participants[3].id,
+            board_number=2,
+            score1=1.0,
+            score2=0.0,
+        )
+        session.add_all([pairing3, pairing4])
+        session.commit()
 
-    yield (
-        db_path,
-        tournament_id,
-        session,
-        participants,
-        [pairing1, pairing2, pairing3, pairing4],
-        [round1, round2],
-    )
+        # Assign digital boards to pairing1 and pairing3
+        da1 = DigitalAssignment(pairing_id=pairing1.id, digital_board_label="Board A")
+        da2 = DigitalAssignment(pairing_id=pairing3.id, digital_board_label="Board A")
+        session.add_all([da1, da2])
+        session.commit()
 
-    session.close()
+        yield (
+            db_path,
+            tournament_id,
+            session,
+            participants,
+            [pairing1, pairing2, pairing3, pairing4],
+            [round1, round2],
+        )
+
+        session.close()
 
 
 # ============================================================================

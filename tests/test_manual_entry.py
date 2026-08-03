@@ -409,42 +409,28 @@ class TestGuiManualEntryIntegration:
 class TestOfflineModeEdgeCases:
     """Tests for offline mode edge cases."""
 
-    def test_empty_tournament_manual_add(self, qt_app):
+    def test_empty_tournament_manual_add(self, qt_app, mock_database_path):
         """Test adding first round to empty tournament."""
-        import tempfile
-        import os
-        from database import init_db
+        with mock_database_path() as db_path:
+            _, tournament_id = create_tournament("Empty Offline")
+            session = get_session(db_path)
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            original_get_path = init_db.get_database_path
+            # Tournament should be empty
+            rounds = get_all_rounds(session, tournament_id)
+            assert len(rounds) == 0
 
-            def mock_get_path(name):
-                return os.path.join(temp_dir, "test.sqlite")
+            # Add first round
+            round_data = RoundData(
+                round_number=1,
+                pairings=[PairingData("A", "B", board_number=1)],
+            )
+            create_round_from_data(session, tournament_id, round_data, "player")
 
-            init_db.get_database_path = mock_get_path
+            # Should now have one round
+            rounds = get_all_rounds(session, tournament_id)
+            assert len(rounds) == 1
 
-            try:
-                db_path, tournament_id = create_tournament("Empty Offline")
-                session = get_session(db_path)
-
-                # Tournament should be empty
-                rounds = get_all_rounds(session, tournament_id)
-                assert len(rounds) == 0
-
-                # Add first round
-                round_data = RoundData(
-                    round_number=1,
-                    pairings=[PairingData("A", "B", board_number=1)],
-                )
-                create_round_from_data(session, tournament_id, round_data, "player")
-
-                # Should now have one round
-                rounds = get_all_rounds(session, tournament_id)
-                assert len(rounds) == 1
-
-                session.close()
-            finally:
-                init_db.get_database_path = original_get_path
+            session.close()
 
     def test_duplicate_round_number(self, offline_tournament):
         """Test adding round with duplicate number overwrites."""

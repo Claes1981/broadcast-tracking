@@ -50,103 +50,86 @@ from scrapers.chess_results import ChessResultsScraper
 
 
 @pytest.fixture
-def temp_db_path():
-    """Create a temporary database path."""
-    temp_dir = tempfile.mkdtemp()
-    db_path = Path(temp_dir) / "test.sqlite"
-    from database import init_db
-
-    original_get_path = init_db.get_database_path
-
-    def mock_get_path(name):
-        return str(db_path)
-
-    init_db.get_database_path = mock_get_path
-    yield db_path
-    shutil.rmtree(temp_dir)
-    init_db.get_database_path = original_get_path
-
-
-@pytest.fixture
-def tournament_with_rounds(temp_db_path):
+def tournament_with_rounds(mock_database_path):
     """Create a tournament with 4 participants, 2 rounds, 4 pairings."""
-    db_path, tournament_id = create_tournament(
-        name="Coverage Gaps Test",
-        source_url="https://example.com",
-        tournament_type="individual",
-    )
-    session = get_session(db_path)
-
-    participants = []
-    for name in ["Alice", "Bob", "Charlie", "Diana"]:
-        p = Participant(
-            tournament_id=tournament_id, name=name, participant_type="player"
+    with mock_database_path() as db_path:
+        db_path, tournament_id = create_tournament(
+            name="Coverage Gaps Test",
+            source_url="https://example.com",
+            tournament_type="individual",
         )
-        session.add(p)
-        participants.append(p)
-    session.commit()
+        session = get_session(db_path)
 
-    round1 = Round(tournament_id=tournament_id, round_number=1)
-    session.add(round1)
-    session.flush()
+        participants = []
+        for name in ["Alice", "Bob", "Charlie", "Diana"]:
+            p = Participant(
+                tournament_id=tournament_id, name=name, participant_type="player"
+            )
+            session.add(p)
+            participants.append(p)
+        session.commit()
 
-    pairing1 = Pairing(
-        round_id=round1.id,
-        participant1_id=participants[0].id,
-        participant2_id=participants[1].id,
-        board_number=1,
-        score1=1.0,
-        score2=0.0,
-    )
-    pairing2 = Pairing(
-        round_id=round1.id,
-        participant1_id=participants[2].id,
-        participant2_id=participants[3].id,
-        board_number=2,
-        score1=0.5,
-        score2=0.5,
-    )
-    session.add_all([pairing1, pairing2])
-    session.commit()
+        round1 = Round(tournament_id=tournament_id, round_number=1)
+        session.add(round1)
+        session.flush()
 
-    round2 = Round(tournament_id=tournament_id, round_number=2)
-    session.add(round2)
-    session.flush()
+        pairing1 = Pairing(
+            round_id=round1.id,
+            participant1_id=participants[0].id,
+            participant2_id=participants[1].id,
+            board_number=1,
+            score1=1.0,
+            score2=0.0,
+        )
+        pairing2 = Pairing(
+            round_id=round1.id,
+            participant1_id=participants[2].id,
+            participant2_id=participants[3].id,
+            board_number=2,
+            score1=0.5,
+            score2=0.5,
+        )
+        session.add_all([pairing1, pairing2])
+        session.commit()
 
-    pairing3 = Pairing(
-        round_id=round2.id,
-        participant1_id=participants[0].id,
-        participant2_id=participants[2].id,
-        board_number=1,
-        score1=0.0,
-        score2=1.0,
-    )
-    pairing4 = Pairing(
-        round_id=round2.id,
-        participant1_id=participants[1].id,
-        participant2_id=participants[3].id,
-        board_number=2,
-        score1=1.0,
-        score2=0.0,
-    )
-    session.add_all([pairing3, pairing4])
-    session.commit()
+        round2 = Round(tournament_id=tournament_id, round_number=2)
+        session.add(round2)
+        session.flush()
 
-    yield (
-        db_path,
-        tournament_id,
-        session,
-        participants,
-        [
-            pairing1,
-            pairing2,
-            pairing3,
-            pairing4,
-        ],
-        [round1, round2],
-    )
+        pairing3 = Pairing(
+            round_id=round2.id,
+            participant1_id=participants[0].id,
+            participant2_id=participants[2].id,
+            board_number=1,
+            score1=0.0,
+            score2=1.0,
+        )
+        pairing4 = Pairing(
+            round_id=round2.id,
+            participant1_id=participants[1].id,
+            participant2_id=participants[3].id,
+            board_number=2,
+            score1=1.0,
+            score2=0.0,
+        )
+        session.add_all([pairing3, pairing4])
+        session.commit()
 
-    session.close()
+        yield (
+            db_path,
+            tournament_id,
+            session,
+            participants,
+            [
+                pairing1,
+                pairing2,
+                pairing3,
+                pairing4,
+            ],
+            [round1, round2],
+        )
+
+        session.close()
 
 
 # ============================================================================
@@ -819,36 +802,25 @@ class TestModelsRepr:
 class TestInitDbRollback:
     """Tests for init_db rollback path."""
 
-    def test_create_tournament_rollback_on_error(self, temp_db_path):
+    def test_create_tournament_rollback_on_error(self, mock_database_path):
         """create_tournament should rollback on error."""
-        from database import init_db
+        from sqlalchemy.exc import IntegrityError
 
-        temp_dir = tempfile.mkdtemp()
-        db_path = Path(temp_dir) / "test.sqlite"
-        original_get_path = init_db.get_database_path
-        init_db.get_database_path = lambda name: str(db_path)
-
-        try:
+        with mock_database_path():
             # Create a valid tournament first
-            db_path_str, tid = create_tournament(
+            create_tournament(
                 name="Rollback Test",
                 source_url="https://example.com",
                 tournament_type="individual",
             )
 
             # Now try to create another with same name (should trigger unique constraint)
-            # This should rollback and raise IntegrityError
-            from sqlalchemy.exc import IntegrityError
-
             with pytest.raises(IntegrityError):
                 create_tournament(
                     name="Rollback Test",
                     source_url="https://example.com",
                     tournament_type="individual",
                 )
-        finally:
-            init_db.get_database_path = original_get_path
-            shutil.rmtree(temp_dir)
 
 
 # ============================================================================

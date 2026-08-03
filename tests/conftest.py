@@ -11,6 +11,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Path setup - run once at import so all test modules can import app packages
 # ---------------------------------------------------------------------------
+
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -159,9 +160,10 @@ def temp_db():
 
 
 @pytest.fixture
-def temp_db_path():
-    """Alias for :func:`temp_db` - kept for backward compatibility."""
-    yield from temp_db()
+def temp_db_path(mock_database_path):
+    """Yield a temporary database path string via mock_database_path."""
+    with mock_database_path() as db_path:
+        yield str(db_path)
 
 
 @pytest.fixture
